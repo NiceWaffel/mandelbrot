@@ -24,15 +24,25 @@ int renderLoop(void *ptr) {
 
 	clock_t time;
 	Rectangle rect_cache;
+	int aa_counter = 0;
 	while(!quit) {
 		if(memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+			aa_counter = 0; // Reset Antialias
 			rect_cache = rect;
 			time = clock();
 			generateImage(rect, rgb_data);
 			printf("Image generation took %6ld ticks\n", clock() - time);
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
+		} else if(aa_counter < 4) {
+			printf("Applying AntiAlias %d\n", aa_counter);
+			
+			// aa_counter starts at 0 and ends at 3
+			doAntiAlias(rect, rgb_data, aa_counter);
+			renderImage(renderer, renderer.width, renderer.height, rgb_data);
+			aa_counter++;
+		} else {
+			SDL_Delay(20);
 		}
-		SDL_Delay(10);
 	}
 
 	mandelbrotCleanup();

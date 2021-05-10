@@ -5,6 +5,8 @@ extern "C" {
 #include <string.h>
 }
 
+#define MAX_ITERATIONS 800
+
 typedef struct {
 	int w;
 	int h;
@@ -16,11 +18,10 @@ MandelBuffer mandelbuffer;
 __device__
 int getIterations(float x0, float y0, float escape_rad) {
 	int iteration = 0;
-	int max_iterations = 1000;
 	float x = 0.0;
 	float y = 0.0;
 
-	while(x*x + y*y <= escape_rad * escape_rad && iteration < max_iterations) {
+	while(x*x + y*y <= escape_rad * escape_rad && iteration < MAX_ITERATIONS) {
 		float tmpx = x * x - y * y + x0;
 		y = 2 * x * y + y0;
 		x = tmpx;
@@ -31,10 +32,10 @@ int getIterations(float x0, float y0, float escape_rad) {
 
 __device__
 int iterationsToColor(int iterations) {
-	if(iterations >= 1000)
+	if(iterations >= MAX_ITERATIONS)
 		return 0x000000; // Black
 
-	float hue = (int)(log2f((float)iterations) * 12.0);
+	float hue = (int)(sqrt((float)iterations) * 12.0);
 	float C = 1.0;
 	float X = hue / 60.0;
 	X = X - (int)X;
@@ -69,9 +70,6 @@ void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
 		cx = cx / (float)pix_w * coord_w + coord_x;
 		cy = cy / (float)pix_h * coord_h + coord_y;
 
-		// Calculate width of pixel in coord space
-		float pw = coord_w / (float)pix_w;
-		float ph = coord_h / (float)pix_h;
 		int iters = getIterations(cx, cy, escape_rad);
 		int color = iterationsToColor(iters);
 		out[i] = 0xff000000 | color; // Write color with full alpha into output
@@ -84,7 +82,7 @@ inline int round_simple(float f) {
 }
 
 __host__
-int blend(int in_color, int blend_color, float blend_factor) {
+int blend(int in_color, int blend_color, float ratio) {
 	float r_in = in_color & 0xff;
 	float g_in = (in_color & 0xff00) >> 8;
 	float b_in = (in_color & 0xff0000) >> 16;
@@ -93,9 +91,9 @@ int blend(int in_color, int blend_color, float blend_factor) {
 	float g_blend = (blend_color & 0xff00) >> 8;
 	float b_blend = (blend_color & 0xff0000) >> 16;
 
-	r_in += r_blend * blend_factor;
-	g_in += g_blend * blend_factor;
-	b_in += b_blend * blend_factor;
+	r_in = r_in * (1.0 - ratio) + r_blend * ratio;
+	g_in = g_in * (1.0 - ratio) + g_blend * ratio;
+	b_in = b_in * (1.0 - ratio) + b_blend * ratio;
 
 	return (int)r_in + (int)g_in * 256 + (int)b_in * 65536;
 }
@@ -195,6 +193,34 @@ void generateImage2(int w, int h, Rectangle coord_rect, int *out_argb) {
 
 	memcpy(out_argb, out, w * h * sizeof(int));
 	cudaFree(out);
+}
+
+// aa_counter defines the shift and blend percentage
+void doAntiAlias(Rectangle coord_rect, int *argb_buf, int aa_counter) {
+	if(argb_buf == NULL)
+		return;
+
+	float shift_amount_x = coord_rect.w / (float)mandelbuffer.w / 3.0;
+	float shift_amount_y = coord_rect.h / (float)mandelbuffer.h / 3.0;
+
+	float shift_x = coord_rect.x +
+			((aa_counter & 2) ? 1.0 : -1.0) * shift_amount_x;
+	float shift_y = coord_rect.y +
+			((aa_counter & 1) ? 1.0 : -1.0) * shift_amount_y;
+
+	mandelbrot<<<64, 256>>>(mandelbuffer.w, mandelbuffer.h,
+			shift_x, shift_y,
+			coord_rect.w, coord_rect.h, 2.0, mandelbuffer.rgb_data);
+	cudaDeviceSynchronize();
+
+	aa_counter += 2;
+
+	// blend them together
+	for(int i = 0; i < mandelbuffer.w * mandelbuffer.h; i++) {
+		int blend_color = blend(argb_buf[i],
+				mandelbuffer.rgb_data[i], 1.0 / aa_counter);
+		argb_buf[i] = 0xff000000 | blend_color; // apply full alpha
+	}
 }
 
 void scaleImage(int w_in, int h_in, int w_out, int h_out, int *in_rgb,
