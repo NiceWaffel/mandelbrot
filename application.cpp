@@ -40,7 +40,7 @@ int renderLoop(void *ptr) {
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
 		} else if(!disable_aa && aa_counter < 4) {
 			log(DEBUG, "Applying Antialias %d\n", aa_counter);
-			
+
 			// aa_counter starts at 0 and ends at 3
 			doAntiAlias(rect, rgb_data, aa_counter);
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
@@ -64,14 +64,18 @@ void eventLoop() {
 	while(SDL_WaitEvent(&ev)) {
 
 		if(ev.type == SDL_MOUSEWHEEL) {
+			int mx, my;
+			SDL_GetMouseState(&mx, &my);
+			float x_skew = (float)mx / (float)w;
+			float y_skew = (float)my / (float)h;
 			if(ev.wheel.y > 0) { // scroll up
-				rect.x += 0.1 * rect.w;
-				rect.y += 0.1 * rect.h;
+				rect.x += 0.2 * x_skew * rect.w;
+				rect.y += 0.2 * y_skew * rect.h;
 				rect.w = 0.8 * rect.w;
 				rect.h = 0.8 * rect.h;
 			} else if(ev.wheel.y < 0) { // scroll down
-				rect.x -= 0.125 * rect.w;
-				rect.y -= 0.125 * rect.h;
+				rect.x -= 0.25 * x_skew * rect.w;
+				rect.y -= 0.25 * y_skew * rect.h;
 				rect.w = 1.25 * rect.w;
 				rect.h = 1.25 * rect.h;
 			}
