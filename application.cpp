@@ -1,6 +1,7 @@
 #include "render.h" //Includes SDL
 #include "mandelbrot.h"
 #include "logger.h"
+#include "config.h"
 
 static Renderer renderer;
 static Rectangle rect;
@@ -32,6 +33,8 @@ int renderLoop(void *ptr) {
 	int aa_counter = 0;
 	while(!quit) {
 		if(memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+			log(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
+					rect.x, rect.y, rect.w, rect.h);
 			aa_counter = 0; // Reset Antialias
 			rect_cache = rect;
 			time = clock();
@@ -129,40 +132,55 @@ void eventLoop() {
 	}
 }
 
-void parseArguments(int argc, char **argv) {
+void print_help() {
+	printf("Usage: mandelbrot [options]\n"
+	       "Options:\n"
+	       "  --help        Show this help page\n"
+	       "  -w WIDTH      The width of the preview window\n"
+	       "  -h HEIGHT     The height of the preview window\n"
+	       "  -v            Increase verbosity level to INFO\n"
+	       "  -vv           Increase verbosity level to DEBUG\n"
+	       "  --disable-aa  Disable anti-aliasing in the preview\n");
+}
+
+void parse_arguments(int argc, char **argv) {
 	int i = 1;
 	while(i < argc) {
-		if(strcmp("-w", argv[i]) == 0) { // Set window width
+		if(strcmp("--help", argv[i]) == 0) {
+			print_help();
+			exit(EXIT_SUCCESS);
+		} else if(strcmp("-w", argv[i]) == 0) { // Set window width
 			i++;
 			if(i < argc)
 				w = atoi(argv[i]);
-			if(w == 0)
-				w = 1800;
+			if(w <= 0 || w > 16383)
+				w = DEFAULT_WIDTH;
 		} else if(strcmp("-h", argv[i]) == 0) { // Set window height
 			i++;
 			if(i < argc)
 				h = atoi(argv[i]);
-			if(h == 0)
-				h = 1000;
+			if(h <= 0 || h > 16383)
+				h = DEFAULT_HEIGHT;
 		} else if(strcmp("-v", argv[i]) == 0) {
 			loglevel = INFO;
-			log(INFO, "Increased loglevel to INFO\n");
+			log(INFO, "Loglevel is set to INFO\n");
 		} else if(strcmp("-vv", argv[i]) == 0) {
 			loglevel = DEBUG;
-			log(INFO, "Increased loglevel to DEBUG\n");
+			log(INFO, "Loglevel is set to DEBUG\n");
 		} else if(strcmp("--disable-aa", argv[i]) == 0) {
 			disable_aa = 1;
+			log(INFO, "Disabled Anti-Alias\n");
 		}
 		i++;
 	}
 }
 
 int main(int argc, char **argv) {
-	w = 1800;
-	h = 1000;
+	w = DEFAULT_WIDTH;
+	h = DEFAULT_HEIGHT;
 	loglevel = WARN;
 
-	parseArguments(argc, argv);
+	parse_arguments(argc, argv);
 
 	float wh_ratio = (float)w / (float)h;
 	float coord_height = 4.0 / wh_ratio;

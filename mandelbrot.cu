@@ -1,11 +1,10 @@
 #include "mandelbrot.h"
+#include "config.h"
 
 extern "C" {
 #include <stdlib.h>
 #include <string.h>
 }
-
-#define MAX_ITERATIONS 800
 
 typedef struct {
 	int w;
@@ -174,7 +173,7 @@ void generateImage(Rectangle coord_rect, int *out_argb) {
 
 	mandelbrot<<<64, 256>>>(mandelbuffer.w, mandelbuffer.h,
 			coord_rect.x, coord_rect.y,
-			coord_rect.w, coord_rect.h, 2.0, mandelbuffer.rgb_data);
+			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data);
 	cudaDeviceSynchronize();
 
 	memcpy(out_argb, mandelbuffer.rgb_data,
@@ -188,7 +187,7 @@ void generateImage2(int w, int h, Rectangle coord_rect, int *out_argb) {
 	int *out;
 	cudaMallocManaged(&out, w * h * sizeof(int));
 	mandelbrot<<<64, 256>>>(w, h, coord_rect.x, coord_rect.y,
-			coord_rect.w, coord_rect.h, 2.0, out);
+			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, out);
 	cudaDeviceSynchronize();
 
 	memcpy(out_argb, out, w * h * sizeof(int));
@@ -210,7 +209,7 @@ void doAntiAlias(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 
 	mandelbrot<<<64, 256>>>(mandelbuffer.w, mandelbuffer.h,
 			shift_x, shift_y,
-			coord_rect.w, coord_rect.h, 2.0, mandelbuffer.rgb_data);
+			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data);
 	cudaDeviceSynchronize();
 
 	aa_counter += 2;
