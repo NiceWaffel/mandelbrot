@@ -1,17 +1,23 @@
-CC=nvcc
-CFLAGS=
-LFLAGS=-I/usr/include/SDL2 -lSDL2
+NVCC=nvcc
+CC=gcc
+NVCFLAGS=
+CFLAGS=-Wall -Wextra -O3
+NVLFLAGS=-I/usr/include/SDL2 -lSDL2
+LFLAGS=-I/usr/include/SDL2 -lSDL2 -pthread -lm
 
 RM=rm
 
-app: render.o mandelbrot.o logger.o
-	$(CC) application.cpp -o app $(LFLAGS) $(CFLAGS) render.o mandelbrot.o logger.o
+app: render.o mandelbrot.o mandelbrot_cpu.o logger.o
+	$(NVCC) application.cpp -o app $(NVLFLAGS) $(NVCFLAGS) render.o mandelbrot.o mandelbrot_cpu.o logger.o
 
 render.o:
 	$(CC) -c render.cpp -o render.o $(LFLAGS) $(CFLAGS)
 
 mandelbrot.o:
-	$(CC) -c mandelbrot.cu -o mandelbrot.o $(CFLAGS)
+	$(NVCC) -c mandelbrot.cu -o mandelbrot.o $(NVCFLAGS)
+
+mandelbrot_cpu.o:
+	$(CC) -c mandelbrot_cpu.cpp -o mandelbrot_cpu.o $(LFLAGS) $(CFLAGS)
 
 logger.o:
 	$(CC) -c logger.cpp -o logger.o $(LFLAGS) $(CFLAGS)

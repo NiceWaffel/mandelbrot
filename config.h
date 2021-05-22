@@ -7,4 +7,7 @@
 #define ESCAPE_RADIUS 3.0
 #define MAX_ITERATIONS 800
 
+#define RENDER_THREAD_BLOCKS 32
+#define RENDER_THREADS 256
+
 #endif

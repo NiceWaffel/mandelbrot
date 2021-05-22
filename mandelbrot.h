@@ -4,12 +4,7 @@
 #define INTERP_NN 1
 #define INTERP_LINEAR 2
 
-typedef struct Rectangle {
-	float x;
-	float y;
-	float w;
-	float h;
-} Rectangle;
+#include "mandelbrot_common.h"
 
 int mandelbrotInit(int w, int h);
 void mandelbrotCleanup();

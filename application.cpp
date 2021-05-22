@@ -1,5 +1,6 @@
 #include "render.h" //Includes SDL
 #include "mandelbrot.h"
+#include "mandelbrot_cpu.h"
 #include "logger.h"
 #include "config.h"
 
@@ -9,6 +10,8 @@ static int quit = 0;
 static int w, h;
 static int disable_aa = 0;
 
+static int use_cpu = 0;
+
 int loglevel;
 
 static SDL_mutex *mutex;
@@ -17,9 +20,18 @@ int renderLoop(void *ptr) {
 	SDL_LockMutex(mutex);
 	log(INFO, "Starting application in resolution %dx%d\n", w, h);
 	renderer = createRenderer(w, h);
-	if(mandelbrotInit(w, h)) {
-		log(ERROR, "Could not initialize Mandelbrot Engine!\n");
-		exit(EXIT_FAILURE);
+	if(!use_cpu) {
+		if(mandelbrotInit(w, h)) {
+			log(ERROR, "Could not initialize Cuda Mandelbrot Engine!\n");
+			log(ERROR, "Falling back to slower CPU implementation!\n");
+			use_cpu = 1;
+		} else {
+			log(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
+		}
+	}
+	if(use_cpu) {
+		log(INFO, "Using CPU Rendering\n");
+		mandelbrotCpuInit(w, h);
 	}
 	int *rgb_data = (int *) malloc(w * h * sizeof(int));
 	if(rgb_data == NULL) {
@@ -38,14 +50,19 @@ int renderLoop(void *ptr) {
 			aa_counter = 0; // Reset Antialias
 			rect_cache = rect;
 			time = clock();
-			generateImage(rect, rgb_data);
+			if(!use_cpu) {
+				generateImage(rect, rgb_data);
+			} else {
+				generateImageCpu(rect, rgb_data);
+			}
 			log(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
 		} else if(!disable_aa && aa_counter < 4) {
 			log(DEBUG, "Applying Antialias %d\n", aa_counter);
 
 			// aa_counter starts at 0 and ends at 3
-			doAntiAlias(rect, rgb_data, aa_counter);
+			if(!use_cpu) // TODO Implement antialias also for cpu rendering
+				doAntiAlias(rect, rgb_data, aa_counter);
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
 			aa_counter++;
 		} else {
@@ -140,7 +157,8 @@ void print_help() {
 	       "  -h HEIGHT     The height of the preview window\n"
 	       "  -v            Increase verbosity level to INFO\n"
 	       "  -vv           Increase verbosity level to DEBUG\n"
-	       "  --disable-aa  Disable anti-aliasing in the preview\n");
+	       "  --disable-aa  Disable anti-aliasing in the preview\n"
+	       "  --force-cpu   Force usage of CPU rendering, even if GPU is available\n");
 }
 
 void parse_arguments(int argc, char **argv) {
@@ -167,9 +185,11 @@ void parse_arguments(int argc, char **argv) {
 		} else if(strcmp("-vv", argv[i]) == 0) {
 			loglevel = DEBUG;
 			log(INFO, "Loglevel is set to DEBUG\n");
-		} else if(strcmp("--disable-aa", argv[i]) == 0) {
+		} else if(strcmp("--no-aa", argv[i]) == 0) {
 			disable_aa = 1;
 			log(INFO, "Disabled Anti-Alias\n");
+		} else if(strcmp("--force-cpu", argv[i]) == 0) {
+			use_cpu = 1;
 		}
 		i++;
 	}

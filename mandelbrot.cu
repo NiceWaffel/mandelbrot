@@ -1,5 +1,6 @@
 #include "mandelbrot.h"
 #include "config.h"
+#include "logger.h"
 
 extern "C" {
 #include <stdlib.h>
@@ -155,12 +156,43 @@ void scaleNN(int w_in, int h_in, int w_out, int h_out, int *in_rgb,
 	}
 }
 
-int mandelbrotInit(int w, int h) {
-	int *img_data;
-	cudaMallocManaged(&img_data, w * h * sizeof(int));
-	mandelbuffer = {w, h, img_data};
+int get_device_attributes() {
+
+	int ret;
+	int cur_device;
+
+	ret = cudaGetDevice(&cur_device);
+	if(ret != cudaSuccess) goto error;
+	log(DEBUG, "Running on device %d\n", cur_device);
+
+	cudaDeviceProp props;
+	ret = cudaGetDeviceProperties(&props, cur_device);
+	if(ret != cudaSuccess) goto error;
+	log(DEBUG, "Running on GPU %s\n", props.name);
+	log(DEBUG, "Device Cuda Version: %d.%d\n", props.major, props.minor);
+	log(DEBUG, "Managed memory is%s supported\n",
+			props.managedMemory ? "" : " not");
 
 	return 0;
+error:
+	return -1;
+}
+
+int mandelbrotInit(int w, int h) {
+	log(INFO, "Starting Mandelbrot Engine...\n");
+	int *img_data = NULL;
+	int ret = cudaMallocManaged(&img_data, w * h * sizeof(int));
+	if(ret != cudaSuccess) goto error;
+	mandelbuffer = {w, h, img_data};
+
+	ret = get_device_attributes();
+	if(ret != cudaSuccess) goto error;
+
+	return 0;
+error:
+	if(img_data != NULL)
+		cudaFree(img_data);
+	return ret;
 }
 
 void mandelbrotCleanup() {
@@ -171,7 +203,7 @@ void generateImage(Rectangle coord_rect, int *out_argb) {
 	if(out_argb == NULL)
 		return;
 
-	mandelbrot<<<64, 256>>>(mandelbuffer.w, mandelbuffer.h,
+	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(mandelbuffer.w, mandelbuffer.h,
 			coord_rect.x, coord_rect.y,
 			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data);
 	cudaDeviceSynchronize();
@@ -186,7 +218,7 @@ void generateImage2(int w, int h, Rectangle coord_rect, int *out_argb) {
 
 	int *out;
 	cudaMallocManaged(&out, w * h * sizeof(int));
-	mandelbrot<<<64, 256>>>(w, h, coord_rect.x, coord_rect.y,
+	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(w, h, coord_rect.x, coord_rect.y,
 			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, out);
 	cudaDeviceSynchronize();
 
@@ -207,7 +239,7 @@ void doAntiAlias(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 	float shift_y = coord_rect.y +
 			((aa_counter & 1) ? 1.0 : -1.0) * shift_amount_y;
 
-	mandelbrot<<<64, 256>>>(mandelbuffer.w, mandelbuffer.h,
+	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(mandelbuffer.w, mandelbuffer.h,
 			shift_x, shift_y,
 			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data);
 	cudaDeviceSynchronize();
