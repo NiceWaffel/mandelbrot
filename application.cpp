@@ -145,8 +145,6 @@ void eventLoop() {
 					free(data);
 					break;
 				case SDLK_i:
-					// TODO we need some logging here
-					// Maybe save in another variable and give as parameter to mandelbrot function
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
 					if(use_cpu)
@@ -186,7 +184,7 @@ void print_help() {
 	       "  --help        Show this help page\n"
 	       "  -w WIDTH      The width of the preview window\n"
 	       "  -h HEIGHT     The height of the preview window\n"
-	       "  -v            Increase verbosity level to INFO\n"
+	       "  -v            Increase verbosity level to VERBOSE\n"
 	       "  -vv           Increase verbosity level to DEBUG\n"
 	       "  --disable-aa  Disable anti-aliasing in the preview\n"
 	       "  --force-cpu   Force usage of CPU rendering, even if GPU is available\n"
