@@ -7,8 +7,8 @@ LFLAGS=-I/usr/include/SDL2 -lSDL2 -pthread -lm
 
 RM=rm
 
-app: render.o mandelbrot.o mandelbrot_cpu.o logger.o
-	$(NVCC) application.cpp -o app $(NVLFLAGS) $(NVCFLAGS) render.o mandelbrot.o mandelbrot_cpu.o logger.o
+app: render.o mandelbrot.o mandelbrot_cpu.o logger.o util.o
+	$(NVCC) application.cpp -o app $(NVLFLAGS) $(NVCFLAGS) render.o mandelbrot.o mandelbrot_cpu.o logger.o util.o
 
 render.o:
 	$(CC) -c render.cpp -o render.o $(LFLAGS) $(CFLAGS)
@@ -21,6 +21,9 @@ mandelbrot_cpu.o:
 
 logger.o:
 	$(CC) -c logger.cpp -o logger.o $(LFLAGS) $(CFLAGS)
+
+util.o:
+	$(CC) -c util.cpp -o util.o $(LFLAGS) $(CFLAGS)
 
 clean:
 	$(RM) *.o

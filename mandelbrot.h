@@ -1,10 +1,10 @@
 #ifndef _MANDELBROT_H_
 #define _MANDELBROT_H_
 
+#include "mandelbrot_common.h"
+
 #define INTERP_NN 1
 #define INTERP_LINEAR 2
-
-#include "mandelbrot_common.h"
 
 int mandelbrotInit(int w, int h);
 void mandelbrotCleanup();

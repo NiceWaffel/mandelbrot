@@ -2,16 +2,12 @@
 #include "config.h"
 #include "logger.h"
 
+#include "util.h"
+
 extern "C" {
 #include <stdlib.h>
 #include <string.h>
 }
-
-typedef struct {
-	int w;
-	int h;
-	int *rgb_data;
-} MandelBuffer;
 
 MandelBuffer mandelbuffer;
 
@@ -74,33 +70,6 @@ void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
 		int color = iterationsToColor(iters);
 		out[i] = 0xff000000 | color; // Write color with full alpha into output
     }
-}
-
-__host__
-inline int round_simple(float f) {
-	return (int)(f + 0.5);
-}
-
-__host__
-int blend(int in_color, int blend_color, float ratio) {
-	float r_in = in_color & 0xff;
-	float g_in = (in_color & 0xff00) >> 8;
-	float b_in = (in_color & 0xff0000) >> 16;
-
-	float r_blend = blend_color & 0xff;
-	float g_blend = (blend_color & 0xff00) >> 8;
-	float b_blend = (blend_color & 0xff0000) >> 16;
-
-	r_in = r_in * (1.0 - ratio) + r_blend * ratio;
-	g_in = g_in * (1.0 - ratio) + g_blend * ratio;
-	b_in = b_in * (1.0 - ratio) + b_blend * ratio;
-
-	return (int)r_in + (int)g_in * 256 + (int)b_in * 65536;
-}
-
-__host__
-int clamp(int i, int min, int max) {
-	return i < min ? min : i > max ? max : i;
 }
 
 __host__
@@ -168,7 +137,7 @@ int get_device_attributes() {
 	cudaDeviceProp props;
 	ret = cudaGetDeviceProperties(&props, cur_device);
 	if(ret != cudaSuccess) goto error;
-	log(DEBUG, "Running on GPU %s\n", props.name);
+	log(DEBUG, "Device name: %s\n", props.name);
 	log(DEBUG, "Device Cuda Version: %d.%d\n", props.major, props.minor);
 	log(DEBUG, "Managed memory is%s supported\n",
 			props.managedMemory ? "" : " not");
@@ -179,7 +148,7 @@ error:
 }
 
 int mandelbrotInit(int w, int h) {
-	log(INFO, "Starting Mandelbrot Engine...\n");
+	log(VERBOSE, "Starting Mandelbrot Engine...\n");
 	int *img_data = NULL;
 	int ret = cudaMallocManaged(&img_data, w * h * sizeof(int));
 	if(ret != cudaSuccess) goto error;
@@ -196,6 +165,7 @@ error:
 }
 
 void mandelbrotCleanup() {
+	log(VERBOSE, "Cleaning up Mandelbrot Engine...\n");
 	cudaFree(mandelbuffer.rgb_data);
 }
 

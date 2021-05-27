@@ -17,20 +17,25 @@ int loglevel;
 static SDL_mutex *mutex;
 
 int renderLoop(void *ptr) {
+	clock_t time;
+
 	SDL_LockMutex(mutex);
-	log(INFO, "Starting application in resolution %dx%d\n", w, h);
+	log(VERBOSE, "Starting application in resolution %dx%d\n", w, h);
+	time = clock();
 	renderer = createRenderer(w, h);
+	log(DEBUG, "Creating Renderer took %ld ticks\n", clock() - time);
+
 	if(!use_cpu) {
 		if(mandelbrotInit(w, h)) {
-			log(ERROR, "Could not initialize Cuda Mandelbrot Engine!\n");
-			log(ERROR, "Falling back to slower CPU implementation!\n");
+			log(WARN, "Could not initialize Cuda Mandelbrot Engine!\n");
+			log(WARN, "Falling back to slower CPU implementation!\n");
 			use_cpu = 1;
 		} else {
 			log(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
 		}
 	}
 	if(use_cpu) {
-		log(INFO, "Using CPU Rendering\n");
+		log(INFO, "Using CPU Rendering. This will impact performance.\n");
 		mandelbrotCpuInit(w, h);
 	}
 	int *rgb_data = (int *) malloc(w * h * sizeof(int));
@@ -40,7 +45,6 @@ int renderLoop(void *ptr) {
 	}
 	SDL_UnlockMutex(mutex);
 
-	clock_t time;
 	Rectangle rect_cache;
 	int aa_counter = 0;
 	while(!quit) {
@@ -61,7 +65,9 @@ int renderLoop(void *ptr) {
 			log(DEBUG, "Applying Antialias %d\n", aa_counter);
 
 			// aa_counter starts at 0 and ends at 3
-			if(!use_cpu) // TODO Implement antialias also for cpu rendering
+			if(use_cpu)
+				doAntiAliasCpu(rect, rgb_data, aa_counter);
+			else
 				doAntiAlias(rect, rgb_data, aa_counter);
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
 			aa_counter++;
@@ -71,6 +77,7 @@ int renderLoop(void *ptr) {
 	}
 
 	mandelbrotCleanup();
+	log(DEBUG, "Destroying Renderer\n");
 	free(rgb_data);
 	destroyRenderer(renderer);
 	return 0;
@@ -180,8 +187,8 @@ void parse_arguments(int argc, char **argv) {
 			if(h <= 0 || h > 16383)
 				h = DEFAULT_HEIGHT;
 		} else if(strcmp("-v", argv[i]) == 0) {
-			loglevel = INFO;
-			log(INFO, "Loglevel is set to INFO\n");
+			loglevel = VERBOSE;
+			log(INFO, "Loglevel is set to VERBOSE\n");
 		} else if(strcmp("-vv", argv[i]) == 0) {
 			loglevel = DEBUG;
 			log(INFO, "Loglevel is set to DEBUG\n");
@@ -198,7 +205,7 @@ void parse_arguments(int argc, char **argv) {
 int main(int argc, char **argv) {
 	w = DEFAULT_WIDTH;
 	h = DEFAULT_HEIGHT;
-	loglevel = WARN;
+	loglevel = INFO;
 
 	parse_arguments(argc, argv);
 

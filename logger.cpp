@@ -5,6 +5,7 @@
 const char *getLevelName(int level) {
 	switch(level) {
 		case DEBUG: return "DEBUG";
+		case VERBOSE: return "VERBOSE";
 		case INFO: return "INFO";
 		case WARN: return "WARN";
 		case ERROR: return "ERROR";
@@ -17,7 +18,7 @@ void log(int level, const char *message, ...) {
 		return;
 	va_list va;
 	va_start(va, message);
-	if(level < 3) { // WARN or ERROR
+	if(level <= WARN) { // WARN or ERROR
 		fprintf(stderr, "[%s] ", getLevelName(level));
 		vfprintf(stderr, message, va);
 	} else {

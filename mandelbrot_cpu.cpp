@@ -2,17 +2,13 @@
 #include "config.h"
 #include "logger.h"
 
+#include "util.h"
+
 extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 }
-
-typedef struct {
-	int w;
-	int h;
-	int *rgb_data;
-} MandelBuffer;
 
 typedef struct {
 	int pix_w, pix_h;
@@ -91,7 +87,7 @@ void *mandelbrot(void *voidargs) {
 #endif
 
 int mandelbrotCpuInit(int w, int h) {
-	log(INFO, "Starting CPU Mandelbrot Engine...\n");
+	log(VERBOSE, "Starting CPU Mandelbrot Engine...\n");
 	int *img_data = (int *)malloc(w * h * sizeof(int));
 	if(img_data == NULL) {
 		log(ERROR, "Could not allocate rgb buffer!\n");
@@ -134,6 +130,7 @@ error:
 }
 
 void mandelbrotCpuCleanup() {
+	log(VERBOSE, "Cleaning up CPU Mandelbrot Engine...\n");
 	free(mandelbuffer_cpu.rgb_data);
 	free(threadIds);
 	free(args_list);
@@ -163,22 +160,76 @@ void generateImageCpu(Rectangle coord_rect, int *out_argb) {
 		log(DEBUG, "Waiting for Thread %d\n", i);
 		pthread_join(threadIds[i], NULL);
 	}
-	//memcpy(out_argb, mandelbuffer_cpu.rgb_data,
-	//		mandelbuffer_cpu.w * mandelbuffer_cpu.h * sizeof(int));
 }
 
 void generateImageCpu2(int w, int h, Rectangle coord_rect, int *out_argb) {
-	if(w || h || coord_rect.x > 0.0 || out_argb != NULL)
+	if(w < 1 || h < 1 || out_argb == NULL)
 		return;
-	return;
-	/* TODO implement
-	if(out_argb == NULL)
+	int i;
+	for(i = 0; i < nthreads; i++) {
+		args_list[i].pix_w = w;
+		args_list[i].pix_h = h;
+		args_list[i].x = coord_rect.x;
+		args_list[i].y = coord_rect.y;
+		args_list[i].w = coord_rect.w;
+		args_list[i].h = coord_rect.h;
+		args_list[i].escape_rad = ESCAPE_RADIUS;
+		args_list[i].out = out_argb;
+		args_list[i].thread_idx = i;
+		int ret = pthread_create(threadIds + i, NULL,
+				mandelbrot, args_list + i);
+		if(ret != 0) {
+			log(ERROR, "Could not create pthread!\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+	for(i = 0; i < nthreads; i++) {
+		log(DEBUG, "Waiting for Thread %d\n", i);
+		pthread_join(threadIds[i], NULL);
+	}
+}
+
+// aa_counter defines the shift and blend percentage
+void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter) {
+	if(argb_buf == NULL)
 		return;
 
-	int *out;
-	mandelbrot(w, h, coord_rect.x, coord_rect.y,
-			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, out);
+	float shift_amount_x = coord_rect.w / (float)mandelbuffer_cpu.w / 3.0;
+	float shift_amount_y = coord_rect.h / (float)mandelbuffer_cpu.h / 3.0;
 
-	memcpy(out_argb, out, w * h * sizeof(int));
-	*/
+	float shift_x = coord_rect.x +
+			((aa_counter & 2) ? 1.0 : -1.0) * shift_amount_x;
+	float shift_y = coord_rect.y +
+			((aa_counter & 1) ? 1.0 : -1.0) * shift_amount_y;
+
+	for(int i = 0; i < nthreads; i++) {
+		args_list[i].pix_w = mandelbuffer_cpu.w;
+		args_list[i].pix_h = mandelbuffer_cpu.h;
+		args_list[i].x = shift_x;
+		args_list[i].y = shift_y;
+		args_list[i].w = coord_rect.w;
+		args_list[i].h = coord_rect.h;
+		args_list[i].escape_rad = ESCAPE_RADIUS;
+		args_list[i].out = mandelbuffer_cpu.rgb_data;
+		args_list[i].thread_idx = i;
+		int ret = pthread_create(threadIds + i, NULL,
+				mandelbrot, args_list + i);
+		if(ret != 0) {
+			log(ERROR, "Could not create pthread!\n");
+			exit(EXIT_FAILURE);
+		}
+	}
+	for(int i = 0; i < nthreads; i++) {
+		log(DEBUG, "Waiting for Thread %d\n", i);
+		pthread_join(threadIds[i], NULL);
+	}
+
+	aa_counter += 2;
+
+	// blend them together
+	for(int i = 0; i < mandelbuffer_cpu.w * mandelbuffer_cpu.h; i++) {
+		int blend_color = blend(argb_buf[i],
+				mandelbuffer_cpu.rgb_data[i], 1.0 / aa_counter);
+		argb_buf[i] = 0xff000000 | blend_color; // apply full alpha
+	}
 }

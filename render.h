@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "logger.h"
+
 typedef struct Renderer {
 	SDL_Window *window;
 	SDL_Renderer *renderer;
