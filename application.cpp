@@ -113,6 +113,7 @@ void eventLoop() {
 			int *data;
 			switch(ev.key.keysym.sym) {
 				case SDLK_q:
+				case SDLK_ESCAPE:
 					return;
 				case SDLK_UP:
 					rect.y -= rect.h * 0.02;
@@ -174,12 +175,21 @@ void eventLoop() {
 				ev.type == SDL_MOUSEBUTTONUP) {
 			if(ev.button.button == SDL_BUTTON_LEFT)
 				mouse_state = ev.button.state;
+		} else if(ev.type == SDL_WINDOWEVENT) {
+			switch (ev.window.event) {
+				case SDL_WINDOWEVENT_RESIZED:
+					// TODO
+					break;
+				case SDL_WINDOWEVENT_CLOSE:
+					return;
+			}
 		}
 	}
 }
 
 void print_help() {
 	printf("Usage: mandelbrot [options]\n"
+	       "\n"
 	       "Options:\n"
 	       "  --help        Show this help page\n"
 	       "  -w WIDTH      The width of the preview window\n"
@@ -187,19 +197,25 @@ void print_help() {
 	       "  -v            Increase verbosity level to VERBOSE\n"
 	       "  -vv           Increase verbosity level to DEBUG\n"
 	       "  --disable-aa  Disable anti-aliasing in the preview\n"
-	       "  --force-cpu   Force usage of CPU rendering, even if GPU is available\n"
+	       "  --force-cpu   Force usage of CPU rendering,\n"
+	       "                even if GPU is available\n"
 	       "\n"
 	       "Bindings:\n"
-	       " Q               Quit the program\n"
-	       " Arrow Keys      Move the camera\n"
-	       " Page Up/Down\n"
-	       " Scroll wheel    Zoom in/out respectivly\n"
-	       " S               Make a screenshot and save as output.bmp in\n"
-	       "                 current working directory\n"
-	       " I / K           Increase / Decrease maximum iterations\n"
-	       "                 Hold shift for a step size of 10\n"
-	       "                 Hold ctrl for a step size of 100\n"
-	       "                 Hold ctrl and shift for a step size of 1000\n");
+	       " q, ESC    Quit the program\n"
+	       "\n"
+	       " Arrow Keys, Mouse Dragging\n"
+	       "           Move the camera\n"
+	       "\n"
+	       " Page Up/Down, Scroll wheel\n"
+	       "           Zoom in/out respectivly\n"
+	       "\n"
+	       " s         Make a screenshot and save as output.bmp\n"
+	       "           in current working directory\n"
+	       "\n"
+	       " i, k      Increase / Decrease maximum iterations\n"
+	       "           Hold shift for a step size of 10\n"
+	       "           Hold ctrl for a step size of 100\n"
+	       "           Hold ctrl and shift for a step size of 1000\n");
 }
 
 void parse_arguments(int argc, char **argv) {
