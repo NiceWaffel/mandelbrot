@@ -3,6 +3,7 @@
 #include "logger.h"
 
 #include "util.h"
+#include "SDL.h"
 
 extern "C" {
 #include <stdlib.h>
@@ -16,19 +17,22 @@ typedef struct {
 	float escape_rad;
 	int *out;
 	int thread_idx;
+	int max_iters;
 } MandelbrotArgs;
 
 MandelBuffer mandelbuffer_cpu;
+int max_iterations_cpu = DEFAULT_ITERATIONS;
+
 static int nthreads = 0;
-static pthread_t *threadIds;
+static SDL_Thread **threads;
 static MandelbrotArgs *args_list;
 
-int getIterationsCpu(float x0, float y0, float escape_rad) {
+int getIterationsCpu(float x0, float y0, float escape_rad, int max_iters) {
 	int iteration = 0;
 	float x = 0.0;
 	float y = 0.0;
 
-	while(x*x + y*y <= escape_rad * escape_rad && iteration < MAX_ITERATIONS) {
+	while(x*x + y*y <= escape_rad * escape_rad && iteration < max_iters) {
 		float tmpx = x * x - y * y + x0;
 		y = 2 * x * y + y0;
 		x = tmpx;
@@ -37,11 +41,11 @@ int getIterationsCpu(float x0, float y0, float escape_rad) {
 	return iteration;
 }
 
-int iterationsToColorCpu(int iterations) {
-	if(iterations >= MAX_ITERATIONS)
+int iterationsToColorCpu(int iterations, int max_iters) {
+	if(iterations >= max_iters)
 		return 0x000000; // Black
 
-	float hue = (int)(sqrt((float)iterations) * 12.0);
+	float hue = (int)(log2((float)iterations) * 12.0);
 	float C = 1.0;
 	float X = hue / 60.0;
 	X = X - (int)X;
@@ -65,7 +69,7 @@ int iterationsToColorCpu(int iterations) {
 	return (int)r + (int)g * 256 + (int)b * 65536;
 }
 
-void *mandelbrot(void *voidargs) {
+int mandelbrot(void *voidargs) {
 	MandelbrotArgs *args = (MandelbrotArgs *)voidargs;
 	for (int i = args->thread_idx; i < args->pix_w * args->pix_h; i += nthreads) {
 		float cx = (float)(i % args->pix_w);
@@ -73,18 +77,18 @@ void *mandelbrot(void *voidargs) {
 		cx = cx / (float)(args->pix_w) * args->w + args->x;
 		cy = cy / (float)(args->pix_h) * args->h + args->y;
 
-		int iters = getIterationsCpu(cx, cy, args->escape_rad);
-		int color = iterationsToColorCpu(iters);
+		int iters = getIterationsCpu(cx, cy, args->escape_rad, args->max_iters);
+		int color = iterationsToColorCpu(iters, args->max_iters);
 		args->out[i] = 0xff000000 | color; // Write color with full alpha into output
 	}
-	return NULL;
+	return 0;
 }
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
+void changeIterationsCpu(int diff) {
+	int new_iters = clamp(max_iterations_cpu + diff, 1, 5000);
+	log(INFO, "Changing Maximum Iterations to %d\n", new_iters);
+	max_iterations_cpu = new_iters;
+}
 
 int mandelbrotCpuInit(int w, int h) {
 	log(VERBOSE, "Starting CPU Mandelbrot Engine...\n");
@@ -95,25 +99,18 @@ int mandelbrotCpuInit(int w, int h) {
 	}
 	mandelbuffer_cpu = {w, h, img_data};
 
-#ifdef _WIN32
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	nthreads = info.dwNumberOfProcessors;
-#else
-#ifdef _SC_NPROCESSORS_ONLN
-	nthreads = sysconf(_SC_NPROCESSORS_ONLN);
-#endif
-#endif
+	nthreads = SDL_GetCPUCount();
+
 	if(nthreads < 1 || nthreads > 256) {
 		log(WARN, "Could not determine CPU core count. "
 		          "Using a default of 8 threads.\n");
 		nthreads = 8;
 	}
 
-	threadIds = (pthread_t *)malloc(nthreads * sizeof(pthread_t));
+	threads = (SDL_Thread **)malloc(nthreads * sizeof(SDL_Thread *));
 	args_list = (MandelbrotArgs *)malloc(nthreads * sizeof(MandelbrotArgs));
 
-	if(threadIds == NULL || args_list == NULL) {
+	if(threads == NULL || args_list == NULL) {
 		log(ERROR, "Could not allocate thread data!\n");
 		goto error;
 	}
@@ -122,8 +119,8 @@ int mandelbrotCpuInit(int w, int h) {
 error:
 	if(img_data != NULL)
 		free(img_data);
-	if(threadIds != NULL)
-		free(threadIds);
+	if(threads != NULL)
+		free(threads);
 	if(args_list != NULL)
 		free(args_list);
 	return -1;
@@ -132,13 +129,12 @@ error:
 void mandelbrotCpuCleanup() {
 	log(VERBOSE, "Cleaning up CPU Mandelbrot Engine...\n");
 	free(mandelbuffer_cpu.rgb_data);
-	free(threadIds);
+	free(threads);
 	free(args_list);
 }
 
 void generateImageCpu(Rectangle coord_rect, int *out_argb) {
 	int i;
-
 	for(i = 0; i < nthreads; i++) {
 		args_list[i].pix_w = mandelbuffer_cpu.w;
 		args_list[i].pix_h = mandelbuffer_cpu.h;
@@ -147,18 +143,18 @@ void generateImageCpu(Rectangle coord_rect, int *out_argb) {
 		args_list[i].w = coord_rect.w;
 		args_list[i].h = coord_rect.h;
 		args_list[i].escape_rad = ESCAPE_RADIUS;
+		args_list[i].max_iters = max_iterations_cpu;
 		args_list[i].out = out_argb;
 		args_list[i].thread_idx = i;
-		int ret = pthread_create(threadIds + i, NULL,
-				mandelbrot, args_list + i);
-		if(ret != 0) {
-			log(ERROR, "Could not create pthread!\n");
-			exit(EXIT_FAILURE);
+		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
+		if(threads[i] == NULL) {
+			log(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
+			return;
 		}
 	}
 	for(i = 0; i < nthreads; i++) {
 		log(DEBUG, "Waiting for Thread %d\n", i);
-		pthread_join(threadIds[i], NULL);
+		SDL_WaitThread(threads[i], NULL);
 	}
 }
 
@@ -174,18 +170,18 @@ void generateImageCpu2(int w, int h, Rectangle coord_rect, int *out_argb) {
 		args_list[i].w = coord_rect.w;
 		args_list[i].h = coord_rect.h;
 		args_list[i].escape_rad = ESCAPE_RADIUS;
+		args_list[i].max_iters = max_iterations_cpu;
 		args_list[i].out = out_argb;
 		args_list[i].thread_idx = i;
-		int ret = pthread_create(threadIds + i, NULL,
-				mandelbrot, args_list + i);
-		if(ret != 0) {
-			log(ERROR, "Could not create pthread!\n");
-			exit(EXIT_FAILURE);
+		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
+		if(threads[i] == NULL) {
+			log(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
+			return;
 		}
 	}
 	for(i = 0; i < nthreads; i++) {
 		log(DEBUG, "Waiting for Thread %d\n", i);
-		pthread_join(threadIds[i], NULL);
+		SDL_WaitThread(threads[i], NULL);
 	}
 }
 
@@ -202,7 +198,8 @@ void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 	float shift_y = coord_rect.y +
 			((aa_counter & 1) ? 1.0 : -1.0) * shift_amount_y;
 
-	for(int i = 0; i < nthreads; i++) {
+	int i;
+	for(i = 0; i < nthreads; i++) {
 		args_list[i].pix_w = mandelbuffer_cpu.w;
 		args_list[i].pix_h = mandelbuffer_cpu.h;
 		args_list[i].x = shift_x;
@@ -210,24 +207,24 @@ void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 		args_list[i].w = coord_rect.w;
 		args_list[i].h = coord_rect.h;
 		args_list[i].escape_rad = ESCAPE_RADIUS;
+		args_list[i].max_iters = max_iterations_cpu;
 		args_list[i].out = mandelbuffer_cpu.rgb_data;
 		args_list[i].thread_idx = i;
-		int ret = pthread_create(threadIds + i, NULL,
-				mandelbrot, args_list + i);
-		if(ret != 0) {
-			log(ERROR, "Could not create pthread!\n");
-			exit(EXIT_FAILURE);
+		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
+		if(threads[i] == NULL) {
+			log(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
+			return;
 		}
 	}
-	for(int i = 0; i < nthreads; i++) {
+	for(i = 0; i < nthreads; i++) {
 		log(DEBUG, "Waiting for Thread %d\n", i);
-		pthread_join(threadIds[i], NULL);
+		SDL_WaitThread(threads[i], NULL);
 	}
 
 	aa_counter += 2;
 
 	// blend them together
-	for(int i = 0; i < mandelbuffer_cpu.w * mandelbuffer_cpu.h; i++) {
+	for(i = 0; i < mandelbuffer_cpu.w * mandelbuffer_cpu.h; i++) {
 		int blend_color = blend(argb_buf[i],
 				mandelbuffer_cpu.rgb_data[i], 1.0 / aa_counter);
 		argb_buf[i] = 0xff000000 | blend_color; // apply full alpha

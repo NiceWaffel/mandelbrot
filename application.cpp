@@ -6,6 +6,7 @@
 
 static Renderer renderer;
 static Rectangle rect;
+static int refresh;
 static int quit = 0;
 static int w, h;
 static int disable_aa = 0;
@@ -48,7 +49,8 @@ int renderLoop(void *ptr) {
 	Rectangle rect_cache;
 	int aa_counter = 0;
 	while(!quit) {
-		if(memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+		if(refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+			refresh = 0;
 			log(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
 					rect.x, rect.y, rect.w, rect.h);
 			aa_counter = 0; // Reset Antialias
@@ -107,6 +109,8 @@ void eventLoop() {
 				rect.h = 1.25 * rect.h;
 			}
 		} else if(ev.type == SDL_KEYDOWN) {
+			int iter_diff;
+			int *data;
 			switch(ev.key.keysym.sym) {
 				case SDLK_q:
 					return;
@@ -135,10 +139,30 @@ void eventLoop() {
 					rect.h = 1.25 * rect.h;
 					break;
 				case SDLK_s: //screenshot
-					int *data = (int *) malloc(3840 * 2160 * sizeof(int));
+					data = (int *) malloc(3840 * 2160 * sizeof(int));
 					generateImage2(3840, 2160, rect, data);
 					writeToBmp("output.bmp", 3840, 2160, data);
 					free(data);
+					break;
+				case SDLK_i:
+					// TODO we need some logging here
+					// Maybe save in another variable and give as parameter to mandelbrot function
+					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
+					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
+					if(use_cpu)
+						changeIterationsCpu(iter_diff);
+					else
+						changeIterations(iter_diff);
+					refresh = 1;
+					break;
+				case SDLK_k:
+					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
+					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
+					if(use_cpu)
+						changeIterationsCpu(-iter_diff);
+					else
+						changeIterations(-iter_diff);
+					refresh = 1;
 					break;
 			}
 		} else if(ev.type == SDL_MOUSEMOTION) {
@@ -165,7 +189,19 @@ void print_help() {
 	       "  -v            Increase verbosity level to INFO\n"
 	       "  -vv           Increase verbosity level to DEBUG\n"
 	       "  --disable-aa  Disable anti-aliasing in the preview\n"
-	       "  --force-cpu   Force usage of CPU rendering, even if GPU is available\n");
+	       "  --force-cpu   Force usage of CPU rendering, even if GPU is available\n"
+	       "\n"
+	       "Bindings:\n"
+	       " Q               Quit the program\n"
+	       " Arrow Keys      Move the camera\n"
+	       " Page Up/Down\n"
+	       " Scroll wheel    Zoom in/out respectivly\n"
+	       " S               Make a screenshot and save as output.bmp in\n"
+	       "                 current working directory\n"
+	       " I / K           Increase / Decrease maximum iterations\n"
+	       "                 Hold shift for a step size of 10\n"
+	       "                 Hold ctrl for a step size of 100\n"
+	       "                 Hold ctrl and shift for a step size of 1000\n");
 }
 
 void parse_arguments(int argc, char **argv) {

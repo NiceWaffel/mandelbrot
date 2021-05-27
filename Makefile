@@ -3,7 +3,7 @@ CC=gcc
 NVCFLAGS=
 CFLAGS=-Wall -Wextra -O3
 NVLFLAGS=-I/usr/include/SDL2 -lSDL2
-LFLAGS=-I/usr/include/SDL2 -lSDL2 -pthread -lm
+LFLAGS=-I/usr/include/SDL2 -lSDL2 -lm
 
 RM=rm
 
