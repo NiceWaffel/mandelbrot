@@ -9,7 +9,7 @@ Renderer createRenderer(int init_w, int init_h) {
 
 	SDL_Window *window = SDL_CreateWindow("Mandelbrot Renderer",
 			SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, init_w, init_h,
-			SDL_WINDOW_SHOWN);
+			SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 	if(window == NULL) {
 		log(ERROR, "SDL_CreateWindow failed: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
@@ -45,12 +45,20 @@ void renderImage(Renderer renderer, int w, int h, int *argb_data) {
 
 	SDL_Surface *surface = SDL_CreateRGBSurfaceFrom(argb_data, w, h, 32, w * 4,
 			rmask, gmask, bmask, amask);
-	if(surface == NULL) return;
+	if(surface == NULL) {
+		log(WARN, "Surface was null! Dropping frame.\n");
+		return;
+	}
+
 	SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer.renderer,
 			surface);
 	SDL_FreeSurface(surface);
-	if(texture == NULL) return;
+	if(texture == NULL) {
+		log(WARN, "Texture was null! Dropping frame.\n");
+		return;
+	}
 
+	SDL_RenderClear(renderer.renderer);
 	SDL_RenderCopy(renderer.renderer, texture, NULL, NULL);
 	SDL_RenderPresent(renderer.renderer);
 

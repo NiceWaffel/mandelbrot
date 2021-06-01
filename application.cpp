@@ -1,55 +1,93 @@
 #include "render.h" //Includes SDL
-#include "mandelbrot_cuda.h"
 #include "mandelbrot_cpu.h"
 #include "logger.h"
 #include "config.h"
 
+#if ENABLE_CUDA
+#include "mandelbrot_cuda.h"
+#endif
+
+typedef enum {
+	ENGINE_TYPE_CPU,
+	ENGINE_TYPE_CUDA
+} EngineType;
+
+typedef struct Engine {
+	EngineType type;
+	void (*genImage)(Rectangle coord_rect, int *out_argb);
+	void (*genImageWH)(int w, int h, Rectangle coord_rect, int *out_argb);
+	void (*doAA)(Rectangle coord_rect, int *out_argb, int aa_counter);
+	void (*changeIters)(int diff);
+} Engine;
+
 static Renderer renderer;
+static Engine engine;
 static Rectangle rect;
+static int engine_initialized = 0;
 static int force_refresh;
 static int quit = 0;
 static int w, h;
 static int disable_aa = 0;
-
 static int force_cpu = 0;
-
 int loglevel;
 
-static SDL_mutex *mutex;
+int *framebuffer;
 
-int renderLoop(void *ptr) {
+void init_engine() {
 	clock_t time;
-
-	SDL_LockMutex(mutex);
 	log(VERBOSE, "Starting application in resolution %dx%d\n", w, h);
 	time = clock();
 	renderer = createRenderer(w, h);
 	log(DEBUG, "Creating Renderer took %ld ticks\n", clock() - time);
 
+#if ENABLE_CUDA
+	// Init pixel data generating engine
 	if(!force_cpu) {
 		if(mandelbrotCudaInit(w, h)) { // Returns nonzero status on error
 			log(WARN, "Could not initialize Cuda Mandelbrot Engine!\n");
 			log(WARN, "Falling back to slower CPU implementation!\n");
 			force_cpu = 1;
 		} else {
+			engine.genImage = &generateImageCuda;
+			engine.genImageWH = &generateImageCudaWH;
+			engine.doAA = &doAntiAliasCuda;
 			log(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
 		}
 	}
 	if(force_cpu) {
+#endif
 		log(INFO, "Using CPU Rendering. This will impact performance.\n");
-		mandelbrotCpuInit(w, h);
+		if(mandelbrotCpuInit(w, h)) { // Returns nonzero status on error
+			log(ERROR, "Could not initialize Cpu Mandelbrot Engine!\n");
+			exit(EXIT_FAILURE);
+		}
+		engine.genImage = &generateImageCpu;
+		engine.genImageWH = &generateImageCpuWH;
+		engine.doAA = &doAntiAliasCpu;
+#if ENABLE_CUDA
 	}
-	int *rgb_data = (int *) malloc(w * h * sizeof(int));
-	if(rgb_data == NULL) {
-		log(ERROR, "Could not allocate memory for RGB-data!\n");
+#endif
+}
+
+void alloc_framebuffer() {
+	framebuffer = (int *) malloc(w * h * sizeof(int));
+	if(framebuffer == NULL) {
+		log(ERROR, "Could not allocate memory for Framebuffer!\n");
 		exit(EXIT_FAILURE);
 	}
-	SDL_UnlockMutex(mutex);
+}
 
-	Rectangle rect_cache;
+int renderLoop(void *ptr) {
+	init_engine();
+	alloc_framebuffer();
+
+	engine_initialized = 1;
 
 	// aa_counter starts at 0 and ends at 3
 	int aa_counter = 0;
+	Rectangle rect_cache;
+	clock_t time;
+
 	while(!quit) {
 		if(force_refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
 			force_refresh = 0;
@@ -57,22 +95,18 @@ int renderLoop(void *ptr) {
 					rect.x, rect.y, rect.w, rect.h);
 			aa_counter = 0; // Reset Antialias
 			rect_cache = rect;
+
 			time = clock();
-			if(!force_cpu) {
-				generateImageCuda(rect, rgb_data);
-			} else {
-				generateImageCpu(rect, rgb_data);
-			}
+			engine.genImage(rect, framebuffer);
 			log(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
-			renderImage(renderer, renderer.width, renderer.height, rgb_data);
+
+			renderImage(renderer, renderer.width, renderer.height, framebuffer);
 		} else if(!disable_aa && aa_counter < 4) {
 			log(DEBUG, "Applying Antialias %d\n", aa_counter);
 
-			if(!force_cpu)
-				doAntiAliasCuda(rect, rgb_data, aa_counter);
-			else
-				doAntiAliasCpu(rect, rgb_data, aa_counter);
-			renderImage(renderer, renderer.width, renderer.height, rgb_data);
+			engine.doAA(rect, framebuffer, aa_counter);
+
+			renderImage(renderer, renderer.width, renderer.height, framebuffer);
 			aa_counter++;
 		} else {
 			// Check again in 30 milliseconds if there is something to render/update
@@ -81,14 +115,15 @@ int renderLoop(void *ptr) {
 		}
 	}
 
-	mandelbrotCudaCleanup();
-	log(DEBUG, "Destroying Renderer\n");
-	free(rgb_data);
-	destroyRenderer(renderer);
 	return 0;
 }
 
 void eventLoop() {
+	while(!engine_initialized && !quit) {
+		SDL_Delay(10);
+	}
+	log(DEBUG, "Starting Event Loop\n");
+
 	int mouse_state = SDL_RELEASED;
 	SDL_Event ev;
 	while(SDL_WaitEvent(&ev)) {
@@ -144,29 +179,20 @@ void eventLoop() {
 					break;
 				case SDLK_s: //screenshot
 					data = (int *) malloc(3840 * 2160 * sizeof(int));
-					if(force_cpu)
-						generateImageCudaWH(3840, 2160, rect, data);
-					else
-						generateImageCpuWH(3840, 2160, rect, data);
+					engine.genImageWH(3840, 2160, rect, data);
 					writeToBmp("output.bmp", 3840, 2160, data);
 					free(data);
 					break;
 				case SDLK_i:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
-					if(force_cpu)
-						changeIterationsCpu(iter_diff);
-					else
-						changeIterationsCuda(iter_diff);
+					engine.changeIters(iter_diff);
 					force_refresh = 1;
 					break;
 				case SDLK_k:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
-					if(force_cpu)
-						changeIterationsCpu(-iter_diff);
-					else
-						changeIterationsCuda(-iter_diff);
+					engine.changeIters(-iter_diff);
 					force_refresh = 1;
 					break;
 			}
@@ -175,6 +201,7 @@ void eventLoop() {
 				rect.x -= ev.motion.xrel * rect.w / (float)w;
 				rect.y -= ev.motion.yrel * rect.h / (float)h;
 			} else {
+				// We don't want any interaction when the mouse just moves over the window
 				continue;
 			}
 		} else if(ev.type == SDL_MOUSEBUTTONDOWN ||
@@ -270,12 +297,6 @@ int main(int argc, char **argv) {
 	float coord_height = 4.0 / wh_ratio;
 	rect = {-2.5, -coord_height / 2, 4.0, coord_height};
 
-	mutex = SDL_CreateMutex();
-	if(mutex == NULL) {
-		log(ERROR, "Could not create mutex!\n");
-		exit(EXIT_FAILURE);
-	}
-
 	SDL_Thread *renderThread = SDL_CreateThread(renderLoop,
 			"RenderThread", NULL);
 	if(renderThread == NULL) {
@@ -286,6 +307,16 @@ int main(int argc, char **argv) {
 
 	quit = 1;
 	SDL_WaitThread(renderThread, NULL);
-	SDL_DestroyMutex(mutex);
+
+#if ENABLE_CUDA
+	if(!force_cpu)
+		mandelbrotCudaCleanup();
+	else
+#endif
+		mandelbrotCpuCleanup();
+
+	log(DEBUG, "Destroying Renderer\n");
+	free(framebuffer);
+	destroyRenderer(renderer);
 	return 0;
 }

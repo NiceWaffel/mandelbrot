@@ -1,6 +1,8 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#define ENABLE_CUDA 1
+
 #define DEFAULT_WIDTH 1600
 #define DEFAULT_HEIGHT 900
 
