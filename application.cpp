@@ -27,9 +27,11 @@ static Rectangle rect;
 static int engine_initialized = 0;
 static int force_refresh;
 static int quit = 0;
+
 static int w, h;
 static int disable_aa = 0;
 static int force_cpu = 0;
+static const char *screenshot_dir = ".";
 
 int *framebuffer;
 
@@ -144,6 +146,19 @@ int renderLoop(void *ptr) {
 	return 0;
 }
 
+void make_screenshot() {
+	// dirname + path seperator + filename + null terminator
+	int pathlen = strlen(screenshot_dir) + 1 + strlen("output.bmp") + 1;
+	char *path;
+	path = (char *)malloc(pathlen * sizeof(char));
+	snprintf(path, pathlen, "%s/%s", screenshot_dir, "output.bmp");
+
+	int *data = (int *) malloc(w * h * sizeof(int));
+	engine.genImageWH(w, h, rect, data);
+	writeToBmp(path, w, h, data);
+	free(data);
+}
+
 void eventLoop() {
 	while(!engine_initialized && !quit) {
 		SDL_Delay(10);
@@ -172,7 +187,6 @@ void eventLoop() {
 			}
 		} else if(ev.type == SDL_KEYDOWN) {
 			int iter_diff;
-			int *data;
 			switch(ev.key.keysym.sym) {
 				case SDLK_q:
 				case SDLK_ESCAPE:
@@ -204,10 +218,7 @@ void eventLoop() {
 					rect.h = 1.25 * rect.h;
 					break;
 				case SDLK_s: //screenshot
-					data = (int *) malloc(3840 * 2160 * sizeof(int));
-					engine.genImageWH(3840, 2160, rect, data);
-					writeToBmp("output.bmp", 3840, 2160, data);
-					free(data);
+					make_screenshot();
 					break;
 				case SDLK_i:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
@@ -273,9 +284,11 @@ void print_help() {
 	       "  -h HEIGHT     The height of the preview window\n"
 	       "  -v            Increase verbosity level to VERBOSE\n"
 	       "  -vv           Increase verbosity level to DEBUG\n"
-	       "  --disable-aa  Disable anti-aliasing in the preview\n"
+	       "  --no-aa       Disable anti-aliasing in the preview\n"
 	       "  --force-cpu   Force usage of CPU rendering,\n"
 	       "                even if GPU is available\n"
+		   "  --screenshot-dir\n"
+		   "                Change the directory where screenshots are stored\n"
 	       "\n"
 	       "Bindings:\n"
 	       " q, ESC    Quit the program\n"
@@ -301,13 +314,15 @@ void parse_arguments(int argc, char **argv) {
 		if(strcmp("--help", argv[i]) == 0) {
 			print_help();
 			exit(EXIT_SUCCESS);
-		} else if(strcmp("-w", argv[i]) == 0) { // Set window width
+		} else if(strcmp("-w", argv[i]) == 0
+				|| strcmp("--width", argv[i]) == 0) { // Set window width
 			i++;
 			if(i < argc)
 				w = atoi(argv[i]);
 			if(w <= 0 || w > 16383)
 				w = DEFAULT_WIDTH;
-		} else if(strcmp("-h", argv[i]) == 0) { // Set window height
+		} else if(strcmp("-h", argv[i]) == 0
+				|| strcmp("--height", argv[i]) == 0) { // Set window height
 			i++;
 			if(i < argc)
 				h = atoi(argv[i]);
@@ -324,6 +339,9 @@ void parse_arguments(int argc, char **argv) {
 			log(INFO, "Disabled Anti-Alias\n");
 		} else if(strcmp("--force-cpu", argv[i]) == 0) {
 			force_cpu = 1;
+		} else if(strcmp("--screenshot-dir", argv[i]) == 0) {
+			i++;
+			screenshot_dir = argv[i];
 		}
 		i++;
 	}
