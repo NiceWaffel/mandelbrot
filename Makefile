@@ -30,22 +30,22 @@ $(TARGET): render.o mandelbrot_cuda.o mandelbrot_cpu.o mandelbrot_common.o logge
 		$(OBJECT_DIR)/mandelbrot_common.o $(OBJECT_DIR)/logger.o $(OBJECT_DIR)/util.o
 
 render.o:
-	$(CC) -c $(SOURCE_DIR)/render.cpp -o $(OBJECT_DIR)/render.o $(LFLAGS) $(CFLAGS)
+	$(CC) -c $(SOURCE_DIR)/render.c -o $(OBJECT_DIR)/render.o $(LFLAGS) $(CFLAGS)
 
 mandelbrot_cuda.o:
 	$(NVCC) -c $(SOURCE_DIR)/mandelbrot_cuda.cu -o $(OBJECT_DIR)/mandelbrot_cuda.o $(NVCFLAGS)
 
 mandelbrot_cpu.o:
-	$(CC) -c $(SOURCE_DIR)/mandelbrot_cpu.cpp -o $(OBJECT_DIR)/mandelbrot_cpu.o $(LFLAGS) $(CFLAGS)
+	$(CC) -c $(SOURCE_DIR)/mandelbrot_cpu.c -o $(OBJECT_DIR)/mandelbrot_cpu.o $(LFLAGS) $(CFLAGS)
 
 logger.o:
-	$(CC) -c $(SOURCE_DIR)/logger.cpp -o $(OBJECT_DIR)/logger.o $(LFLAGS) $(CFLAGS)
+	$(CC) -c $(SOURCE_DIR)/logger.c -o $(OBJECT_DIR)/logger.o $(LFLAGS) $(CFLAGS)
 
 util.o:
-	$(CC) -c $(SOURCE_DIR)/util.cpp -o $(OBJECT_DIR)/util.o $(LFLAGS) $(CFLAGS)
+	$(CC) -c $(SOURCE_DIR)/util.c -o $(OBJECT_DIR)/util.o $(LFLAGS) $(CFLAGS)
 
 mandelbrot_common.o:
-	$(CC) -c $(SOURCE_DIR)/mandelbrot_common.cpp -o $(OBJECT_DIR)/mandelbrot_common.o $(LFLAGS) $(CFLAGS)
+	$(CC) -c $(SOURCE_DIR)/mandelbrot_common.c -o $(OBJECT_DIR)/mandelbrot_common.o $(LFLAGS) $(CFLAGS)
 
 clean:
 	$(RM) -r $(OBJECT_DIR)

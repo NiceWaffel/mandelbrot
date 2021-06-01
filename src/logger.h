@@ -9,7 +9,7 @@ typedef enum {
     DEBUG = 5
 } LogLevel;
 
-void log(LogLevel level, const char *message, ...);
+void mandelLog(LogLevel level, const char *message, ...);
 
 void setLogLevel(LogLevel level);
 

@@ -1,10 +1,10 @@
 #include "mandelbrot_cuda.h"
-#include "config.h"
-#include "logger.h"
-
-#include "util.h"
 
 extern "C" {
+#include "util.h"
+#include "logger.h"
+#include "config.h"
+
 #include <stdlib.h>
 #include <string.h>
 }
@@ -78,7 +78,7 @@ void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
 __host__
 void changeIterationsCuda(int diff) {
 	int new_iters = clamp(max_iterations + diff, 1, 5000);
-	log(INFO, "Changing Maximum Iterations to %d\n", new_iters);
+	mandelLog(INFO, "Changing Maximum Iterations to %d\n", new_iters);
 	max_iterations = new_iters;
 }
 
@@ -88,14 +88,14 @@ int getDeviceAttributes() {
 
 	ret = cudaGetDevice(&cur_device);
 	if(ret != cudaSuccess) goto error;
-	log(DEBUG, "Running on device %d\n", cur_device);
+	mandelLog(DEBUG, "Running on device %d\n", cur_device);
 
 	cudaDeviceProp props;
 	ret = cudaGetDeviceProperties(&props, cur_device);
 	if(ret != cudaSuccess) goto error;
-	log(DEBUG, "Device name: %s\n", props.name);
-	log(DEBUG, "Device Cuda Version: %d.%d\n", props.major, props.minor);
-	log(DEBUG, "Managed memory is%s supported\n",
+	mandelLog(DEBUG, "Device name: %s\n", props.name);
+	mandelLog(DEBUG, "Device Cuda Version: %d.%d\n", props.major, props.minor);
+	mandelLog(DEBUG, "Managed memory is%s supported\n",
 			props.managedMemory ? "" : " not");
 
 	return 0;
@@ -104,7 +104,7 @@ error:
 }
 
 int mandelbrotCudaInit(int w, int h) {
-	log(VERBOSE, "Starting Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "Starting Mandelbrot Engine...\n");
 	int *img_data = NULL;
 	int ret = cudaMallocManaged(&img_data, w * h * sizeof(int));
 	if(ret != cudaSuccess) goto error;
@@ -121,7 +121,7 @@ error:
 }
 
 void mandelbrotCudaCleanup() {
-	log(VERBOSE, "Cleaning up Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "Cleaning up Mandelbrot Engine...\n");
 	cudaFree(mandelbuffer.rgb_data);
 }
 

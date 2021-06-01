@@ -15,7 +15,7 @@ const char *getLevelName(int level) {
 	}
 }
 
-void log(LogLevel level, const char *message, ...) {
+void mandelLog(LogLevel level, const char *message, ...) {
 	if(level > loglevel)
 		return;
 	va_list va;

@@ -1,7 +1,9 @@
+extern "C" {
 #include "config.h"
 #include "logger.h"
 #include "render.h" //Includes SDL
 #include "mandelbrot_cpu.h"
+}
 
 #if ENABLE_CUDA
 #include "mandelbrot_cuda.h"
@@ -37,17 +39,17 @@ int *framebuffer;
 
 void init_engine() {
 	clock_t time;
-	log(VERBOSE, "Starting application in resolution %dx%d\n", w, h);
+	mandelLog(VERBOSE, "Starting application in resolution %dx%d\n", w, h);
 	time = clock();
 	renderer = createRenderer(w, h);
-	log(DEBUG, "Creating Renderer took %ld ticks\n", clock() - time);
+	mandelLog(DEBUG, "Creating Renderer took %ld ticks\n", clock() - time);
 
 #if ENABLE_CUDA
 	// Init pixel data generating engine
 	if(!force_cpu) {
 		if(mandelbrotCudaInit(w, h)) { // Returns nonzero status on error
-			log(WARN, "Could not initialize Cuda Mandelbrot Engine!\n");
-			log(WARN, "Falling back to slower CPU implementation!\n");
+			mandelLog(WARN, "Could not initialize Cuda Mandelbrot Engine!\n");
+			mandelLog(WARN, "Falling back to slower CPU implementation!\n");
 			force_cpu = 1;
 		} else {
 			engine.type = ENGINE_TYPE_CUDA;
@@ -55,14 +57,14 @@ void init_engine() {
 			engine.genImageWH = &generateImageCudaWH;
 			engine.doAA = &doAntiAliasCuda;
 			engine.resizeFramebuffer = &resizeFramebufferCuda;
-			log(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
+			mandelLog(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
 		}
 	}
 	if(force_cpu) {
 #endif
-		log(INFO, "Using CPU Rendering. This will impact performance.\n");
+		mandelLog(INFO, "Using CPU Rendering. This will impact performance.\n");
 		if(mandelbrotCpuInit(w, h)) { // Returns nonzero status on error
-			log(ERROR, "Could not initialize Cpu Mandelbrot Engine!\n");
+			mandelLog(ERROR, "Could not initialize Cpu Mandelbrot Engine!\n");
 			exit(EXIT_FAILURE);
 		}
 		engine.type = ENGINE_TYPE_CPU;
@@ -78,7 +80,7 @@ void init_engine() {
 void alloc_framebuffer() {
 	framebuffer = (int *) malloc(w * h * sizeof(int));
 	if(framebuffer == NULL) {
-		log(ERROR, "Could not allocate memory for Framebuffer!\n");
+		mandelLog(ERROR, "Could not allocate memory for Framebuffer!\n");
 		exit(EXIT_FAILURE);
 	}
 }
@@ -86,7 +88,7 @@ void alloc_framebuffer() {
 void realloc_framebuffer() {
 	framebuffer = (int *) realloc(framebuffer, w * h * sizeof(int));
 	if(framebuffer == NULL) {
-		log(ERROR, "Could not allocate memory for Framebuffer!\n");
+		mandelLog(ERROR, "Could not allocate memory for Framebuffer!\n");
 		exit(EXIT_FAILURE);
 	}
 }
@@ -111,7 +113,7 @@ int renderLoop(void *ptr) {
 		if(f_w != w || f_h != h) {
 			realloc_framebuffer();
 			if(engine.resizeFramebuffer(w, h) == -1) {
-				log(ERROR, "Could not allocate memory for Engine Framebuffer!\n");
+				mandelLog(ERROR, "Could not allocate memory for Engine Framebuffer!\n");
 				exit(EXIT_FAILURE);
 			}
 			f_w = w;
@@ -119,18 +121,18 @@ int renderLoop(void *ptr) {
 		}
 		if(force_refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
 			force_refresh = 0;
-			log(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
+			mandelLog(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
 					rect.x, rect.y, rect.w, rect.h);
 			aa_counter = 0; // Reset Antialias
 			rect_cache = rect;
 
 			time = clock();
 			engine.genImage(rect, framebuffer);
-			log(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
+			mandelLog(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
 
 			renderImage(renderer, f_w, f_h, framebuffer);
 		} else if(!disable_aa && aa_counter < 4) {
-			log(DEBUG, "Applying Antialias %d\n", aa_counter);
+			mandelLog(DEBUG, "Applying Antialias %d\n", aa_counter);
 
 			engine.doAA(rect, framebuffer, aa_counter);
 
@@ -163,7 +165,7 @@ void eventLoop() {
 	while(!engine_initialized && !quit) {
 		SDL_Delay(10);
 	}
-	log(DEBUG, "Starting Event Loop\n");
+	mandelLog(DEBUG, "Starting Event Loop\n");
 
 	int mouse_state = SDL_RELEASED;
 	SDL_Event ev;
@@ -254,7 +256,7 @@ void eventLoop() {
 					// new width and height are stored in the event data
 					w = ev.window.data1;
 					h = ev.window.data2;
-					log(DEBUG, "Window size changed to %dx%d\n", w, h);
+					mandelLog(DEBUG, "Window size changed to %dx%d\n", w, h);
 					renderer.width = w;
 					renderer.height = h;
 
@@ -330,13 +332,13 @@ void parse_arguments(int argc, char **argv) {
 				h = DEFAULT_HEIGHT;
 		} else if(strcmp("-v", argv[i]) == 0) {
 			setLogLevel(VERBOSE);
-			log(INFO, "Loglevel is set to VERBOSE\n");
+			mandelLog(INFO, "Loglevel is set to VERBOSE\n");
 		} else if(strcmp("-vv", argv[i]) == 0) {
 			setLogLevel(DEBUG);
-			log(INFO, "Loglevel is set to DEBUG\n");
+			mandelLog(INFO, "Loglevel is set to DEBUG\n");
 		} else if(strcmp("--no-aa", argv[i]) == 0) {
 			disable_aa = 1;
-			log(INFO, "Disabled Anti-Alias\n");
+			mandelLog(INFO, "Disabled Anti-Alias\n");
 		} else if(strcmp("--force-cpu", argv[i]) == 0) {
 			force_cpu = 1;
 		} else if(strcmp("--screenshot-dir", argv[i]) == 0) {
@@ -361,7 +363,7 @@ int main(int argc, char **argv) {
 	SDL_Thread *renderThread = SDL_CreateThread(renderLoop,
 			"RenderThread", NULL);
 	if(renderThread == NULL) {
-		log(ERROR, "Could not create Render Thread!\n");
+		mandelLog(ERROR, "Could not create Render Thread!\n");
 		exit(EXIT_FAILURE);
 	}
 	eventLoop();
@@ -376,7 +378,7 @@ int main(int argc, char **argv) {
 #endif
 		mandelbrotCpuCleanup();
 
-	log(DEBUG, "Destroying Renderer\n");
+	mandelLog(DEBUG, "Destroying Renderer\n");
 	free(framebuffer);
 	destroyRenderer(renderer);
 	return 0;

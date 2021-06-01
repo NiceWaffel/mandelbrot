@@ -5,11 +5,9 @@
 #include "util.h"
 #include "SDL.h"
 
-extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-}
 
 typedef struct {
 	int pix_w, pix_h;
@@ -86,23 +84,23 @@ int mandelbrot(void *voidargs) {
 
 void changeIterationsCpu(int diff) {
 	int new_iters = clamp(max_iterations_cpu + diff, 1, 5000);
-	log(INFO, "Changing Maximum Iterations to %d\n", new_iters);
+	mandelLog(INFO, "Changing Maximum Iterations to %d\n", new_iters);
 	max_iterations_cpu = new_iters;
 }
 
 int mandelbrotCpuInit(int w, int h) {
-	log(VERBOSE, "Starting CPU Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "Starting CPU Mandelbrot Engine...\n");
 	int *img_data = (int *)malloc(w * h * sizeof(int));
 	if(img_data == NULL) {
-		log(ERROR, "Could not allocate rgb buffer!\n");
+		mandelLog(ERROR, "Could not allocate rgb buffer!\n");
 		goto error;
 	}
-	mandelbuffer_cpu = {w, h, img_data};
+	mandelbuffer_cpu = (MandelBuffer){w, h, img_data};
 
 	nthreads = SDL_GetCPUCount();
 
 	if(nthreads < 1 || nthreads > 256) {
-		log(WARN, "Could not determine CPU core count. "
+		mandelLog(WARN, "Could not determine CPU core count. "
 		          "Using a default of 8 threads.\n");
 		nthreads = 8;
 	}
@@ -111,7 +109,7 @@ int mandelbrotCpuInit(int w, int h) {
 	args_list = (MandelbrotArgs *)malloc(nthreads * sizeof(MandelbrotArgs));
 
 	if(threads == NULL || args_list == NULL) {
-		log(ERROR, "Could not allocate thread data!\n");
+		mandelLog(ERROR, "Could not allocate thread data!\n");
 		goto error;
 	}
 
@@ -129,7 +127,7 @@ error:
 int resizeFramebufferCpu(int new_w, int new_h) {
 	mandelbuffer_cpu.rgb_data = (int *)realloc(mandelbuffer_cpu.rgb_data, new_w * new_h * sizeof(int));
 	if(mandelbuffer_cpu.rgb_data == NULL) {
-		log(ERROR, "Could not allocate rgb buffer!\n");
+		mandelLog(ERROR, "Could not allocate rgb buffer!\n");
 		return -1;
 	}
 	mandelbuffer_cpu.w = new_w;
@@ -138,7 +136,7 @@ int resizeFramebufferCpu(int new_w, int new_h) {
 }
 
 void mandelbrotCpuCleanup() {
-	log(VERBOSE, "Cleaning up CPU Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "Cleaning up CPU Mandelbrot Engine...\n");
 	free(mandelbuffer_cpu.rgb_data);
 	free(threads);
 	free(args_list);
@@ -159,12 +157,12 @@ void generateImageCpu(Rectangle coord_rect, int *out_argb) {
 		args_list[i].thread_idx = i;
 		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
 		if(threads[i] == NULL) {
-			log(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
+			mandelLog(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
 			return;
 		}
 	}
 	for(i = 0; i < nthreads; i++) {
-		log(DEBUG, "Waiting for Thread %d\n", i);
+		mandelLog(DEBUG, "Waiting for Thread %d\n", i);
 		SDL_WaitThread(threads[i], NULL);
 	}
 }
@@ -186,12 +184,12 @@ void generateImageCpuWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 		args_list[i].thread_idx = i;
 		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
 		if(threads[i] == NULL) {
-			log(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
+			mandelLog(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
 			return;
 		}
 	}
 	for(i = 0; i < nthreads; i++) {
-		log(DEBUG, "Waiting for Thread %d\n", i);
+		mandelLog(DEBUG, "Waiting for Thread %d\n", i);
 		SDL_WaitThread(threads[i], NULL);
 	}
 }
@@ -223,12 +221,12 @@ void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 		args_list[i].thread_idx = i;
 		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
 		if(threads[i] == NULL) {
-			log(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
+			mandelLog(ERROR, "Could not create SDL_Thread: %s\n", SDL_GetError());
 			return;
 		}
 	}
 	for(i = 0; i < nthreads; i++) {
-		log(DEBUG, "Waiting for Thread %d\n", i);
+		mandelLog(DEBUG, "Waiting for Thread %d\n", i);
 		SDL_WaitThread(threads[i], NULL);
 	}
 
