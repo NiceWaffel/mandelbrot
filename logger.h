@@ -1,7 +1,6 @@
 #ifndef _LOGGER_H_
 #define _LOGGER_H_
 
-#define EXTRA_DEBUG 6
 #define DEBUG 5
 #define VERBOSE 4
 #define INFO 3

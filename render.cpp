@@ -15,7 +15,6 @@ Renderer createRenderer(int init_w, int init_h) {
 		exit(EXIT_FAILURE);
 	}
 
-
 	SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, 0);
 	if(renderer == NULL) {
 		log(ERROR, "SDL_CreateRenderer failed: %s\n", SDL_GetError());

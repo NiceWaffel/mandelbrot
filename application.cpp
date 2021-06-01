@@ -1,17 +1,17 @@
 #include "render.h" //Includes SDL
-#include "mandelbrot.h"
+#include "mandelbrot_cuda.h"
 #include "mandelbrot_cpu.h"
 #include "logger.h"
 #include "config.h"
 
 static Renderer renderer;
 static Rectangle rect;
-static int refresh;
+static int force_refresh;
 static int quit = 0;
 static int w, h;
 static int disable_aa = 0;
 
-static int use_cpu = 0;
+static int force_cpu = 0;
 
 int loglevel;
 
@@ -26,16 +26,16 @@ int renderLoop(void *ptr) {
 	renderer = createRenderer(w, h);
 	log(DEBUG, "Creating Renderer took %ld ticks\n", clock() - time);
 
-	if(!use_cpu) {
-		if(mandelbrotInit(w, h)) {
+	if(!force_cpu) {
+		if(mandelbrotCudaInit(w, h)) { // Returns nonzero status on error
 			log(WARN, "Could not initialize Cuda Mandelbrot Engine!\n");
 			log(WARN, "Falling back to slower CPU implementation!\n");
-			use_cpu = 1;
+			force_cpu = 1;
 		} else {
 			log(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
 		}
 	}
-	if(use_cpu) {
+	if(force_cpu) {
 		log(INFO, "Using CPU Rendering. This will impact performance.\n");
 		mandelbrotCpuInit(w, h);
 	}
@@ -47,17 +47,19 @@ int renderLoop(void *ptr) {
 	SDL_UnlockMutex(mutex);
 
 	Rectangle rect_cache;
+
+	// aa_counter starts at 0 and ends at 3
 	int aa_counter = 0;
 	while(!quit) {
-		if(refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
-			refresh = 0;
+		if(force_refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+			force_refresh = 0;
 			log(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
 					rect.x, rect.y, rect.w, rect.h);
 			aa_counter = 0; // Reset Antialias
 			rect_cache = rect;
 			time = clock();
-			if(!use_cpu) {
-				generateImage(rect, rgb_data);
+			if(!force_cpu) {
+				generateImageCuda(rect, rgb_data);
 			} else {
 				generateImageCpu(rect, rgb_data);
 			}
@@ -66,19 +68,20 @@ int renderLoop(void *ptr) {
 		} else if(!disable_aa && aa_counter < 4) {
 			log(DEBUG, "Applying Antialias %d\n", aa_counter);
 
-			// aa_counter starts at 0 and ends at 3
-			if(use_cpu)
-				doAntiAliasCpu(rect, rgb_data, aa_counter);
+			if(!force_cpu)
+				doAntiAliasCuda(rect, rgb_data, aa_counter);
 			else
-				doAntiAlias(rect, rgb_data, aa_counter);
+				doAntiAliasCpu(rect, rgb_data, aa_counter);
 			renderImage(renderer, renderer.width, renderer.height, rgb_data);
 			aa_counter++;
 		} else {
-			SDL_Delay(20);
+			// Check again in 30 milliseconds if there is something to render/update
+			// 30 milliseconds is easily responsive enough and doesn't result in huge idle load
+			SDL_Delay(30);
 		}
 	}
 
-	mandelbrotCleanup();
+	mandelbrotCudaCleanup();
 	log(DEBUG, "Destroying Renderer\n");
 	free(rgb_data);
 	destroyRenderer(renderer);
@@ -86,8 +89,6 @@ int renderLoop(void *ptr) {
 }
 
 void eventLoop() {
-	SDL_LockMutex(mutex);
-	SDL_UnlockMutex(mutex);
 	int mouse_state = SDL_RELEASED;
 	SDL_Event ev;
 	while(SDL_WaitEvent(&ev)) {
@@ -128,12 +129,14 @@ void eventLoop() {
 					rect.x += rect.w * 0.02;
 					break;
 				case SDLK_PAGEUP:
+					// zoom in towards center
 					rect.x += 0.1 * rect.w;
 					rect.y += 0.1 * rect.h;
 					rect.w = 0.8 * rect.w;
 					rect.h = 0.8 * rect.h;
 					break;
 				case SDLK_PAGEDOWN:
+					// zoom out from center
 					rect.x -= 0.125 * rect.w;
 					rect.y -= 0.125 * rect.h;
 					rect.w = 1.25 * rect.w;
@@ -141,27 +144,30 @@ void eventLoop() {
 					break;
 				case SDLK_s: //screenshot
 					data = (int *) malloc(3840 * 2160 * sizeof(int));
-					generateImage2(3840, 2160, rect, data);
+					if(force_cpu)
+						generateImageCudaWH(3840, 2160, rect, data);
+					else
+						generateImageCpuWH(3840, 2160, rect, data);
 					writeToBmp("output.bmp", 3840, 2160, data);
 					free(data);
 					break;
 				case SDLK_i:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
-					if(use_cpu)
+					if(force_cpu)
 						changeIterationsCpu(iter_diff);
 					else
-						changeIterations(iter_diff);
-					refresh = 1;
+						changeIterationsCuda(iter_diff);
+					force_refresh = 1;
 					break;
 				case SDLK_k:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
-					if(use_cpu)
+					if(force_cpu)
 						changeIterationsCpu(-iter_diff);
 					else
-						changeIterations(-iter_diff);
-					refresh = 1;
+						changeIterationsCuda(-iter_diff);
+					force_refresh = 1;
 					break;
 			}
 		} else if(ev.type == SDL_MOUSEMOTION) {
@@ -178,7 +184,8 @@ void eventLoop() {
 		} else if(ev.type == SDL_WINDOWEVENT) {
 			switch (ev.window.event) {
 				case SDL_WINDOWEVENT_RESIZED:
-					// TODO
+				case SDL_WINDOWEVENT_SIZE_CHANGED:
+					// TODO change width and height -> changes framebuffer size
 					break;
 				case SDL_WINDOWEVENT_CLOSE:
 					return;
@@ -246,7 +253,7 @@ void parse_arguments(int argc, char **argv) {
 			disable_aa = 1;
 			log(INFO, "Disabled Anti-Alias\n");
 		} else if(strcmp("--force-cpu", argv[i]) == 0) {
-			use_cpu = 1;
+			force_cpu = 1;
 		}
 		i++;
 	}

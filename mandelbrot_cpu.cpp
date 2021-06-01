@@ -158,7 +158,7 @@ void generateImageCpu(Rectangle coord_rect, int *out_argb) {
 	}
 }
 
-void generateImageCpu2(int w, int h, Rectangle coord_rect, int *out_argb) {
+void generateImageCpuWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 	if(w < 1 || h < 1 || out_argb == NULL)
 		return;
 	int i;

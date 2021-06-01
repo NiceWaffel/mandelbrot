@@ -1,4 +1,4 @@
-#include "mandelbrot.h"
+#include "mandelbrot_cuda.h"
 #include "config.h"
 #include "logger.h"
 
@@ -76,67 +76,13 @@ void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
 }
 
 __host__
-void changeIterations(int diff) {
+void changeIterationsCuda(int diff) {
 	int new_iters = clamp(max_iterations + diff, 1, 5000);
 	log(INFO, "Changing Maximum Iterations to %d\n", new_iters);
 	max_iterations = new_iters;
 }
 
-__host__
-void scaleLinear(int w_in, int h_in, int w_out, int h_out, int *in_rgb,
-		int *out_rgb) {
-	float scale_x = (float)w_in / (float)w_out;
-	float scale_y = (float)h_in / (float)h_out;
-
-	for(int out_y = 0; out_y < h_out; out_y++) {
-		float in_y = scale_y * (float)out_y;
-		for(int out_x = 0; out_x < w_out; out_x++) {
-			float in_x = scale_x * (float)out_x;
-
-			float px = in_x - (int)in_x;
-			float py = in_y - (int)in_y;
-
-			int x = (int)in_x;
-			int y = (int)in_y;
-
-			float p00, p01, p10, p11;
-			p00 = px * py;
-			p01 = (1.0 - px) * py;
-			p10 = px * (1.0 - py);
-			p11 = (1.0 - px) * (1.0 - py);
-
-			int color = 0;
-			color = blend(color, in_rgb[clamp(y, 0, h_in) * w_in +
-					clamp(x, 0, w_in)], p00);
-			color = blend(color, in_rgb[clamp(y, 0, h_in) * w_in +
-					clamp(x + 1, 0, w_in)], p01);
-			color = blend(color, in_rgb[clamp(y + 1, 0, h_in) * w_in +
-					clamp(x, 0, w_in)], p10);
-			color = blend(color, in_rgb[clamp(y + 1, 0, h_in) * w_in +
-					clamp(x + 1, 0, w_in)], p11);
-
-			out_rgb[out_y * w_out + out_x] = 0xff000000 | color;
-		}
-	}
-}
-
-__host__
-void scaleNN(int w_in, int h_in, int w_out, int h_out, int *in_rgb,
-		int *out_rgb) {
-	float scale_x = (float)w_in / (float)w_out;
-	float scale_y = (float)h_in / (float)h_out;
-
-	for(int y = 0; y < h_out; y++) {
-		int in_y = round_simple(scale_y * (float)y);
-		for(int x = 0; x < w_out; x++) {
-			int in_x = round_simple(scale_x * (float)x);
-			out_rgb[y * w_out + x] = in_rgb[in_y * w_in + in_x];
-		}
-	}
-}
-
-int get_device_attributes() {
-
+int getDeviceAttributes() {
 	int ret;
 	int cur_device;
 
@@ -157,14 +103,14 @@ error:
 	return -1;
 }
 
-int mandelbrotInit(int w, int h) {
+int mandelbrotCudaInit(int w, int h) {
 	log(VERBOSE, "Starting Mandelbrot Engine...\n");
 	int *img_data = NULL;
 	int ret = cudaMallocManaged(&img_data, w * h * sizeof(int));
 	if(ret != cudaSuccess) goto error;
 	mandelbuffer = {w, h, img_data};
 
-	ret = get_device_attributes();
+	ret = getDeviceAttributes();
 	if(ret != cudaSuccess) goto error;
 
 	return 0;
@@ -174,12 +120,12 @@ error:
 	return ret;
 }
 
-void mandelbrotCleanup() {
+void mandelbrotCudaCleanup() {
 	log(VERBOSE, "Cleaning up Mandelbrot Engine...\n");
 	cudaFree(mandelbuffer.rgb_data);
 }
 
-void generateImage(Rectangle coord_rect, int *out_argb) {
+void generateImageCuda(Rectangle coord_rect, int *out_argb) {
 	if(out_argb == NULL)
 		return;
 
@@ -192,7 +138,7 @@ void generateImage(Rectangle coord_rect, int *out_argb) {
 			mandelbuffer.w * mandelbuffer.h * sizeof(int));
 }
 
-void generateImage2(int w, int h, Rectangle coord_rect, int *out_argb) {
+void generateImageCudaWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 	if(out_argb == NULL)
 		return;
 
@@ -207,13 +153,17 @@ void generateImage2(int w, int h, Rectangle coord_rect, int *out_argb) {
 }
 
 // aa_counter defines the shift and blend percentage
-void doAntiAlias(Rectangle coord_rect, int *argb_buf, int aa_counter) {
+void doAntiAliasCuda(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 	if(argb_buf == NULL)
+		return;
+	if(aa_counter < 0 || aa_counter > 3)
 		return;
 
 	float shift_amount_x = coord_rect.w / (float)mandelbuffer.w / 3.0;
 	float shift_amount_y = coord_rect.h / (float)mandelbuffer.h / 3.0;
 
+	// Use the last two bits of aa_counter as shift indicator
+	// For now this works fine, as the aa_counter is only allowed in a range of 0 to 3
 	float shift_x = coord_rect.x +
 			((aa_counter & 2) ? 1.0 : -1.0) * shift_amount_x;
 	float shift_y = coord_rect.y +
@@ -231,20 +181,6 @@ void doAntiAlias(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 		int blend_color = blend(argb_buf[i],
 				mandelbuffer.rgb_data[i], 1.0 / aa_counter);
 		argb_buf[i] = 0xff000000 | blend_color; // apply full alpha
-	}
-}
-
-void scaleImage(int w_in, int h_in, int w_out, int h_out, int *in_rgb,
-		int *out_rgb, int interp_method) {
-
-	switch(interp_method) {
-		case INTERP_LINEAR:
-			scaleLinear(w_in, h_in, w_out, h_out, in_rgb, out_rgb);
-			break;
-		case INTERP_NN:
-			/* FALLTHRU */
-		default:
-			scaleNN(w_in, h_in, w_out, h_out, in_rgb, out_rgb);
 	}
 }
 
