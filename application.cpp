@@ -1,7 +1,7 @@
+#include "config.h"
+#include "logger.h"
 #include "render.h" //Includes SDL
 #include "mandelbrot_cpu.h"
-#include "logger.h"
-#include "config.h"
 
 #if ENABLE_CUDA
 #include "mandelbrot_cuda.h"
@@ -18,6 +18,7 @@ typedef struct Engine {
 	void (*genImageWH)(int w, int h, Rectangle coord_rect, int *out_argb);
 	void (*doAA)(Rectangle coord_rect, int *out_argb, int aa_counter);
 	void (*changeIters)(int diff);
+	int (*resizeFramebuffer)(int new_w, int new_h);
 } Engine;
 
 static Renderer renderer;
@@ -29,7 +30,6 @@ static int quit = 0;
 static int w, h;
 static int disable_aa = 0;
 static int force_cpu = 0;
-int loglevel;
 
 int *framebuffer;
 
@@ -48,9 +48,11 @@ void init_engine() {
 			log(WARN, "Falling back to slower CPU implementation!\n");
 			force_cpu = 1;
 		} else {
+			engine.type = ENGINE_TYPE_CUDA;
 			engine.genImage = &generateImageCuda;
 			engine.genImageWH = &generateImageCudaWH;
 			engine.doAA = &doAntiAliasCuda;
+			engine.resizeFramebuffer = &resizeFramebufferCuda;
 			log(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
 		}
 	}
@@ -61,9 +63,11 @@ void init_engine() {
 			log(ERROR, "Could not initialize Cpu Mandelbrot Engine!\n");
 			exit(EXIT_FAILURE);
 		}
+		engine.type = ENGINE_TYPE_CPU;
 		engine.genImage = &generateImageCpu;
 		engine.genImageWH = &generateImageCpuWH;
 		engine.doAA = &doAntiAliasCpu;
+		engine.resizeFramebuffer = &resizeFramebufferCpu;
 #if ENABLE_CUDA
 	}
 #endif
@@ -71,6 +75,14 @@ void init_engine() {
 
 void alloc_framebuffer() {
 	framebuffer = (int *) malloc(w * h * sizeof(int));
+	if(framebuffer == NULL) {
+		log(ERROR, "Could not allocate memory for Framebuffer!\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+void realloc_framebuffer() {
+	framebuffer = (int *) realloc(framebuffer, w * h * sizeof(int));
 	if(framebuffer == NULL) {
 		log(ERROR, "Could not allocate memory for Framebuffer!\n");
 		exit(EXIT_FAILURE);
@@ -88,7 +100,21 @@ int renderLoop(void *ptr) {
 	Rectangle rect_cache;
 	clock_t time;
 
+	// stores the size of the framebuffer
+	// when the window gets resized we finish rendering our image with the old framebuffer size
+	int f_w = w;
+	int f_h = h;
+
 	while(!quit) {
+		if(f_w != w || f_h != h) {
+			realloc_framebuffer();
+			if(engine.resizeFramebuffer(w, h) == -1) {
+				log(ERROR, "Could not allocate memory for Engine Framebuffer!\n");
+				exit(EXIT_FAILURE);
+			}
+			f_w = w;
+			f_h = h;
+		}
 		if(force_refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
 			force_refresh = 0;
 			log(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
@@ -100,13 +126,13 @@ int renderLoop(void *ptr) {
 			engine.genImage(rect, framebuffer);
 			log(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
 
-			renderImage(renderer, renderer.width, renderer.height, framebuffer);
+			renderImage(renderer, f_w, f_h, framebuffer);
 		} else if(!disable_aa && aa_counter < 4) {
 			log(DEBUG, "Applying Antialias %d\n", aa_counter);
 
 			engine.doAA(rect, framebuffer, aa_counter);
 
-			renderImage(renderer, renderer.width, renderer.height, framebuffer);
+			renderImage(renderer, f_w, f_h, framebuffer);
 			aa_counter++;
 		} else {
 			// Check again in 30 milliseconds if there is something to render/update
@@ -209,10 +235,27 @@ void eventLoop() {
 			if(ev.button.button == SDL_BUTTON_LEFT)
 				mouse_state = ev.button.state;
 		} else if(ev.type == SDL_WINDOWEVENT) {
+			float wh_ratio;
+			float coord_height;
 			switch (ev.window.event) {
 				case SDL_WINDOWEVENT_RESIZED:
 				case SDL_WINDOWEVENT_SIZE_CHANGED:
-					// TODO change width and height -> changes framebuffer size
+					// new width and height are stored in the event data
+					w = ev.window.data1;
+					h = ev.window.data2;
+					log(DEBUG, "Window size changed to %dx%d\n", w, h);
+					renderer.width = w;
+					renderer.height = h;
+
+					// Recalculate rect coordinates.
+					// The width stays the same (thereby scaling the window in the horizontal axis scales the image).
+					// The height is scaled down so that the rendered image gets cropped (rather than distorted).
+					wh_ratio = (float)w / (float)h;
+					coord_height = rect.w / wh_ratio;
+					rect.y = rect.y + rect.h / 2.0 - coord_height / 2.0;
+					rect.h = coord_height;
+
+					force_refresh = 1;
 					break;
 				case SDL_WINDOWEVENT_CLOSE:
 					return;
@@ -271,10 +314,10 @@ void parse_arguments(int argc, char **argv) {
 			if(h <= 0 || h > 16383)
 				h = DEFAULT_HEIGHT;
 		} else if(strcmp("-v", argv[i]) == 0) {
-			loglevel = VERBOSE;
+			setLogLevel(VERBOSE);
 			log(INFO, "Loglevel is set to VERBOSE\n");
 		} else if(strcmp("-vv", argv[i]) == 0) {
-			loglevel = DEBUG;
+			setLogLevel(DEBUG);
 			log(INFO, "Loglevel is set to DEBUG\n");
 		} else if(strcmp("--no-aa", argv[i]) == 0) {
 			disable_aa = 1;
@@ -289,7 +332,7 @@ void parse_arguments(int argc, char **argv) {
 int main(int argc, char **argv) {
 	w = DEFAULT_WIDTH;
 	h = DEFAULT_HEIGHT;
-	loglevel = INFO;
+	setLogLevel(INFO);
 
 	parse_arguments(argc, argv);
 
@@ -309,7 +352,7 @@ int main(int argc, char **argv) {
 	SDL_WaitThread(renderThread, NULL);
 
 #if ENABLE_CUDA
-	if(!force_cpu)
+	if(engine.type == ENGINE_TYPE_CUDA)
 		mandelbrotCudaCleanup();
 	else
 #endif

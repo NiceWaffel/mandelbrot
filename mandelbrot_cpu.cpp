@@ -126,6 +126,17 @@ error:
 	return -1;
 }
 
+int resizeFramebufferCpu(int new_w, int new_h) {
+	mandelbuffer_cpu.rgb_data = (int *)realloc(mandelbuffer_cpu.rgb_data, new_w * new_h * sizeof(int));
+	if(mandelbuffer_cpu.rgb_data == NULL) {
+		log(ERROR, "Could not allocate rgb buffer!\n");
+		return -1;
+	}
+	mandelbuffer_cpu.w = new_w;
+	mandelbuffer_cpu.h = new_h;
+	return 0;
+}
+
 void mandelbrotCpuCleanup() {
 	log(VERBOSE, "Cleaning up CPU Mandelbrot Engine...\n");
 	free(mandelbuffer_cpu.rgb_data);

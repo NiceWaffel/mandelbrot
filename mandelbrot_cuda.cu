@@ -125,6 +125,16 @@ void mandelbrotCudaCleanup() {
 	cudaFree(mandelbuffer.rgb_data);
 }
 
+int resizeFramebufferCuda(int new_w, int new_h) {
+	cudaFree(mandelbuffer.rgb_data);
+	int *img_data = NULL;
+	if(cudaMallocManaged(&img_data, new_w * new_h * sizeof(int)) != cudaSuccess) {
+		return -1;
+	}
+	mandelbuffer = {new_w, new_h, img_data};
+	return 0;
+}
+
 void generateImageCuda(Rectangle coord_rect, int *out_argb) {
 	if(out_argb == NULL)
 		return;

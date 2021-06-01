@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+LogLevel loglevel;
+
 const char *getLevelName(int level) {
 	switch(level) {
 		case DEBUG: return "DEBUG";
@@ -13,7 +15,7 @@ const char *getLevelName(int level) {
 	}
 }
 
-void log(int level, const char *message, ...) {
+void log(LogLevel level, const char *message, ...) {
 	if(level > loglevel)
 		return;
 	va_list va;
@@ -28,3 +30,6 @@ void log(int level, const char *message, ...) {
 	va_end(va);
 }
 
+void setLogLevel(LogLevel level) {
+	loglevel = level;
+}

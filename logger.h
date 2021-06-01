@@ -1,15 +1,17 @@
 #ifndef _LOGGER_H_
 #define _LOGGER_H_
 
-#define DEBUG 5
-#define VERBOSE 4
-#define INFO 3
-#define WARN 2
-#define ERROR 1
+typedef enum {
+    ERROR = 1,
+    WARN = 2,
+    INFO = 3,
+    VERBOSE = 4,
+    DEBUG = 5
+} LogLevel;
 
-extern int loglevel;
+void log(LogLevel level, const char *message, ...);
 
-void log(int level, const char *message, ...);
+void setLogLevel(LogLevel level);
 
 #endif
 
