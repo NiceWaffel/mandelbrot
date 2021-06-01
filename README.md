@@ -1,6 +1,6 @@
 # A simple mandelbrot renderer
 
-This project is intended for me as a way to see the performance difference of a CPU and GPU.
+This project's intention is for me to see the performance difference of a CPU and GPU and to just play around with SDL and the cuda toolkit a bit.
 
 # How to build
 These build instructions are only for Ubuntu Linux, as that is what I use primarily.
