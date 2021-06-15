@@ -131,7 +131,7 @@ int renderLoop(void *ptr) {
 			mandelLog(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
 
 			renderImage(renderer, f_w, f_h, framebuffer);
-		} else if(!disable_aa && aa_counter < 4) {
+		} else if(!disable_aa && aa_counter < MAX_AA_COUNTER) {
 			mandelLog(DEBUG, "Applying Antialias %d\n", aa_counter);
 
 			engine.doAA(rect, framebuffer, aa_counter);

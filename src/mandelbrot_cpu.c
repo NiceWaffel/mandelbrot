@@ -43,7 +43,7 @@ int iterationsToColorCpu(int iterations, int max_iters) {
 	if(iterations >= max_iters)
 		return 0x000000; // Black
 
-	float hue = (int)(log2((float)iterations) * 12.0);
+	float hue = (int)(log2((float)iterations) * 20.0);
 	float C = 1.0;
 	float X = hue / 60.0;
 	X = X - (int)X;
@@ -198,14 +198,36 @@ void generateImageCpuWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 	if(argb_buf == NULL)
 		return;
+	if(aa_counter < 0 || aa_counter > 7)
+		return;
 
-	float shift_amount_x = coord_rect.w / (float)mandelbuffer_cpu.w / 3.0;
-	float shift_amount_y = coord_rect.h / (float)mandelbuffer_cpu.h / 3.0;
+	float shift_amount_x, shift_amount_y;
+	float shift_x, shift_y;
+	if(aa_counter < 4) {
+		shift_amount_x = coord_rect.w / (float)mandelbuffer_cpu.w / 3.0;
+		shift_amount_y = coord_rect.h / (float)mandelbuffer_cpu.h / 3.0;
 
-	float shift_x = coord_rect.x +
-			((aa_counter & 2) ? 1.0 : -1.0) * shift_amount_x;
-	float shift_y = coord_rect.y +
-			((aa_counter & 1) ? 1.0 : -1.0) * shift_amount_y;
+		/* Go for every corner by using bit pattern of last two bits */
+		shift_x = coord_rect.x + ((aa_counter & 2) ? 1.0 : -1.0) * shift_amount_x;
+		shift_y = coord_rect.y + ((aa_counter & 1) ? 1.0 : -1.0) * shift_amount_y;
+	}
+	else if(aa_counter < 8) {
+		shift_amount_x = coord_rect.w / (float)mandelbuffer_cpu.w / 2.0;
+		shift_amount_y = coord_rect.h / (float)mandelbuffer_cpu.h / 2.0;
+
+		/*
+		 * When aa_counter is:
+		 * - 4: We shift in positive x direction
+		 * - 5: We shift in positive y direction
+		 * - 6: We shift in negative x direction
+		 * - 7: We shift in negative y direction
+		 */
+		int even = aa_counter % 2 == 0;
+		shift_x = coord_rect.x + ( even ? 1.0 : 0.0) *
+				shift_amount_x * (aa_counter > 5 ? -1.0 : 1.0);
+		shift_y = coord_rect.y + (!even ? 1.0 : 0.0) *
+				shift_amount_y * (aa_counter > 5 ? -1.0 : 1.0);
+	}
 
 	int i;
 	for(i = 0; i < nthreads; i++) {

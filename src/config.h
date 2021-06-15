@@ -12,4 +12,6 @@
 #define RENDER_THREAD_BLOCKS 32
 #define RENDER_THREADS 256
 
+#define MAX_AA_COUNTER 8
+
 #endif
