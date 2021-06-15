@@ -5,11 +5,13 @@ ENABLE_CUDA:=$(shell grep "ENABLE_CUDA" src/config.h | cut -d " " -f 3)
 NVCC=nvcc
 CC=gcc
 
+# If cuda is enabled we need to use nvcc to compile application.cpp
+# to prevent a linker error with the cuda library
+# FIXME Use nvcc just as the linker and compile with gcc
 ifeq "$(ENABLE_CUDA)" "1"
-	# TODO if nvcc doesn't exist we print a warning an compile without cuda
-	CPP=nvcc
+CPP=nvcc
 else
-	CPP=g++
+CPP=g++
 endif
 
 TARGET=app
@@ -28,10 +30,7 @@ RM=rm
 
 TARGET_DEPS=render.o mandelbrot_cpu.o mandelbrot_common.o logger.o util.o
 
-# If cuda is enabled we need to use nvcc to compile application.cpp
-# to prevent a linker error with the cuda library
 ifeq "$(ENABLE_CUDA)" "1"
-	CPP=nvcc
 	TARGET_DEPS+=mandelbrot_cuda.o
 endif
 
