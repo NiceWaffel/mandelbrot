@@ -1,9 +1,7 @@
-extern "C" {
 #include "config.h"
 #include "logger.h"
 #include "render.h" //Includes SDL
 #include "mandelbrot_cpu.h"
-}
 
 #if ENABLE_CUDA
 #include "mandelbrot_cuda.h"
@@ -93,7 +91,7 @@ void realloc_framebuffer() {
 	}
 }
 
-int renderLoop(void *ptr) {
+int renderLoop() {
 	init_engine();
 	alloc_framebuffer();
 
@@ -358,7 +356,7 @@ int main(int argc, char **argv) {
 
 	float wh_ratio = (float)w / (float)h;
 	float coord_height = 4.0 / wh_ratio;
-	rect = {-2.5, -coord_height / 2, 4.0, coord_height};
+	rect = (Rectangle) {-2.5, -coord_height / 2, 4.0, coord_height};
 
 	SDL_Thread *renderThread = SDL_CreateThread(renderLoop,
 			"RenderThread", NULL);

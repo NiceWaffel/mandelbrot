@@ -1,6 +1,6 @@
+extern "C" {
 #include "mandelbrot_cuda.h"
 
-extern "C" {
 #include "util.h"
 #include "logger.h"
 #include "config.h"
@@ -75,7 +75,10 @@ void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
     }
 }
 
-__host__
+
+/* Host functions decraled extern "C" to be linkable with C code */
+extern "C" {
+
 void changeIterationsCuda(int diff) {
 	int new_iters = clamp(max_iterations + diff, 1, 5000);
 	mandelLog(INFO, "Changing Maximum Iterations to %d\n", new_iters);
@@ -210,4 +213,6 @@ void doAntiAliasCuda(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 				mandelbuffer.rgb_data[i], 1.0 / aa_counter);
 		argb_buf[i] = 0xff000000 | blend_color; // apply full alpha
 	}
+}
+
 }
