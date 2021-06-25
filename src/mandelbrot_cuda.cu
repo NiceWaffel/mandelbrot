@@ -12,17 +12,29 @@ extern "C" {
 MandelBuffer mandelbuffer;
 
 int max_iterations = DEFAULT_ITERATIONS;
+int exponent = DEFAULT_EXPONENT;
 
 __device__
-int getIterations(float x0, float y0, float escape_rad, int max_iters) {
+void iterate(float x0, float y0, int power, float *x, float *y) {
+	float retx = *x;
+	float rety = *y;
+	for(int i = 0; i < power - 1; i++) {
+		float tmpx = retx * x[0] - rety * y[0];
+		rety = x[0] * rety + retx * y[0];
+		retx = tmpx;
+	}
+	x[0] = retx + x0;
+	y[0] = rety + y0;
+}
+
+__device__
+int getIterations(float x0, float y0, float escape_rad, int max_iters, int power) {
 	int iteration = 0;
 	float x = 0.0;
 	float y = 0.0;
 
 	while(x*x + y*y <= escape_rad * escape_rad && iteration < max_iters) {
-		float tmpx = x * x - y * y + x0;
-		y = 2 * x * y + y0;
-		x = tmpx;
+		iterate(x0, y0, power, &x, &y);
 		iteration++;
 	}
 	return iteration;
@@ -60,7 +72,7 @@ int iterationsToColor(int iterations, int max_iters) {
 __global__
 void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
 				float coord_w, float coord_h, float escape_rad,
-				int *out, int max_iters) {
+				int *out, int max_iters, int power) {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
     for (int i = index; i < pix_w * pix_h; i += stride) {
@@ -69,20 +81,26 @@ void mandelbrot(int pix_w, int pix_h, float coord_x, float coord_y,
 		cx = cx / (float)pix_w * coord_w + coord_x;
 		cy = cy / (float)pix_h * coord_h + coord_y;
 
-		int iters = getIterations(cx, cy, escape_rad, max_iters);
+		int iters = getIterations(cx, cy, escape_rad, max_iters, power);
 		int color = iterationsToColor(iters, max_iters);
 		out[i] = 0xff000000 | color; // Write color with full alpha into output
     }
 }
 
 
-/* Host functions decraled extern "C" to be linkable with C code */
+/* Host functions declared extern "C" to be linkable with C code */
 extern "C" {
 
 void changeIterationsCuda(int diff) {
 	int new_iters = clamp(max_iterations + diff, 1, 5000);
 	mandelLog(INFO, "Changing Maximum Iterations to %d\n", new_iters);
 	max_iterations = new_iters;
+}
+
+void changeExponentCuda(int diff) {
+	int new_exponent = clamp(exponent + diff, 1, 200);
+	mandelLog(INFO, "Changing Exponent to %d\n", new_exponent);
+	exponent = new_exponent;
 }
 
 int getDeviceAttributes() {
@@ -144,7 +162,7 @@ void generateImageCuda(Rectangle coord_rect, int *out_argb) {
 
 	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(mandelbuffer.w, mandelbuffer.h,
 			coord_rect.x, coord_rect.y,
-			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data, max_iterations);
+			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data, max_iterations, exponent);
 	cudaDeviceSynchronize();
 
 	memcpy(out_argb, mandelbuffer.rgb_data,
@@ -158,7 +176,7 @@ void generateImageCudaWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 	int *out;
 	cudaMallocManaged(&out, w * h * sizeof(int));
 	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(w, h, coord_rect.x, coord_rect.y,
-			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, out, max_iterations);
+			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, out, max_iterations, exponent);
 	cudaDeviceSynchronize();
 
 	memcpy(out_argb, out, w * h * sizeof(int));
@@ -202,7 +220,7 @@ void doAntiAliasCuda(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 
 	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(mandelbuffer.w, mandelbuffer.h,
 			shift_x, shift_y,
-			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data, max_iterations);
+			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data, max_iterations, exponent);
 	cudaDeviceSynchronize();
 
 	aa_counter += 2;

@@ -18,6 +18,7 @@ typedef struct Engine {
 	void (*genImageWH)(int w, int h, Rectangle coord_rect, int *out_argb);
 	void (*doAA)(Rectangle coord_rect, int *out_argb, int aa_counter);
 	void (*changeIters)(int diff);
+	void (*changeExponent)(int newExp);
 	int (*resizeFramebuffer)(int new_w, int new_h);
 } Engine;
 
@@ -32,6 +33,8 @@ static int w, h;
 static int disable_aa = 0;
 static int force_cpu = 0;
 static const char *screenshot_dir = ".";
+
+static SDL_mutex *mutex;
 
 int *framebuffer;
 
@@ -55,6 +58,8 @@ void init_engine() {
 			engine.genImageWH = &generateImageCudaWH;
 			engine.doAA = &doAntiAliasCuda;
 			engine.resizeFramebuffer = &resizeFramebufferCuda;
+			engine.changeIters = &changeIterationsCuda;
+			engine.changeExponent = &changeExponentCuda;
 			mandelLog(INFO, "Cuda Mandelbrot Engine successfully initialized\n");
 		}
 	}
@@ -70,6 +75,8 @@ void init_engine() {
 		engine.genImageWH = &generateImageCpuWH;
 		engine.doAA = &doAntiAliasCpu;
 		engine.resizeFramebuffer = &resizeFramebufferCpu;
+		engine.changeIters = &changeIterationsCpu;
+		engine.changeExponent = &changeExponentCpu;
 #if ENABLE_CUDA
 	}
 #endif
@@ -83,8 +90,8 @@ void alloc_framebuffer() {
 	}
 }
 
-void realloc_framebuffer() {
-	framebuffer = (int *) realloc(framebuffer, w * h * sizeof(int));
+void realloc_framebuffer(int f_w, int f_h) {
+	framebuffer = (int *) realloc(framebuffer, f_w * f_h * sizeof(int));
 	if(framebuffer == NULL) {
 		mandelLog(ERROR, "Could not allocate memory for Framebuffer!\n");
 		exit(EXIT_FAILURE);
@@ -109,30 +116,33 @@ int renderLoop() {
 
 	while(!quit) {
 		if(f_w != w || f_h != h) {
-			realloc_framebuffer();
-			if(engine.resizeFramebuffer(w, h) == -1) {
+			f_w = w;
+			f_h = h;
+			realloc_framebuffer(f_w, f_h);
+			if(engine.resizeFramebuffer(f_w, f_h) == -1) {
 				mandelLog(ERROR, "Could not allocate memory for Engine Framebuffer!\n");
 				exit(EXIT_FAILURE);
 			}
-			f_w = w;
-			f_h = h;
 		}
 		if(force_refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+			SDL_LockMutex(mutex);
+			rect_cache = rect;
+			SDL_UnlockMutex(mutex);
+
 			force_refresh = 0;
 			mandelLog(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
 					rect.x, rect.y, rect.w, rect.h);
 			aa_counter = 0; // Reset Antialias
-			rect_cache = rect;
 
 			time = clock();
-			engine.genImage(rect, framebuffer);
+			engine.genImage(rect_cache, framebuffer);
 			mandelLog(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
 
 			renderImage(renderer, f_w, f_h, framebuffer);
 		} else if(!disable_aa && aa_counter < MAX_AA_COUNTER) {
 			mandelLog(DEBUG, "Applying Antialias %d\n", aa_counter);
 
-			engine.doAA(rect, framebuffer, aa_counter);
+			engine.doAA(rect_cache, framebuffer, aa_counter);
 
 			renderImage(renderer, f_w, f_h, framebuffer);
 			aa_counter++;
@@ -153,9 +163,15 @@ void make_screenshot() {
 	path = (char *)malloc(pathlen * sizeof(char));
 	snprintf(path, pathlen, "%s/%s", screenshot_dir, "output.bmp");
 
-	int *data = (int *) malloc(w * h * sizeof(int));
-	engine.genImageWH(w, h, rect, data);
-	writeToBmp(path, w, h, data);
+	SDL_LockMutex(mutex);
+	int my_w = w;
+	int my_h = h;
+	Rectangle my_rect = rect;
+	SDL_UnlockMutex(mutex);
+
+	int *data = (int *) malloc(my_w * my_h * sizeof(int));
+	engine.genImageWH(my_w, my_h, my_rect, data);
+	writeToBmp(path, my_w, my_h, data);
 	free(data);
 }
 
@@ -174,6 +190,7 @@ void eventLoop() {
 			SDL_GetMouseState(&mx, &my);
 			float x_skew = (float)mx / (float)w;
 			float y_skew = (float)my / (float)h;
+			SDL_LockMutex(mutex);
 			if(ev.wheel.y > 0) { // scroll up
 				rect.x += 0.2 * x_skew * rect.w;
 				rect.y += 0.2 * y_skew * rect.h;
@@ -185,8 +202,10 @@ void eventLoop() {
 				rect.w = 1.25 * rect.w;
 				rect.h = 1.25 * rect.h;
 			}
+			SDL_UnlockMutex(mutex);
 		} else if(ev.type == SDL_KEYDOWN) {
 			int iter_diff;
+			SDL_LockMutex(mutex);
 			switch(ev.key.keysym.sym) {
 				case SDLK_q:
 				case SDLK_ESCAPE:
@@ -218,8 +237,9 @@ void eventLoop() {
 					rect.h = 1.25 * rect.h;
 					break;
 				case SDLK_s: //screenshot
+					SDL_UnlockMutex(mutex);
 					make_screenshot();
-					break;
+					continue;
 				case SDLK_i:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
@@ -232,11 +252,22 @@ void eventLoop() {
 					engine.changeIters(-iter_diff);
 					force_refresh = 1;
 					break;
+				case SDLK_u:
+					engine.changeExponent(1);
+					force_refresh = 1;
+					break;
+				case SDLK_j:
+					engine.changeExponent(-1);
+					force_refresh = 1;
+					break;
 			}
+			SDL_UnlockMutex(mutex);
 		} else if(ev.type == SDL_MOUSEMOTION) {
 			if(mouse_state == SDL_PRESSED) {
+				SDL_LockMutex(mutex);
 				rect.x -= ev.motion.xrel * rect.w / (float)w;
 				rect.y -= ev.motion.yrel * rect.h / (float)h;
+				SDL_UnlockMutex(mutex);
 			} else {
 				// We don't want any interaction when the mouse just moves over the window
 				continue;
@@ -248,6 +279,7 @@ void eventLoop() {
 		} else if(ev.type == SDL_WINDOWEVENT) {
 			float wh_ratio;
 			float coord_height;
+			SDL_LockMutex(mutex);
 			switch (ev.window.event) {
 				case SDL_WINDOWEVENT_RESIZED:
 				case SDL_WINDOWEVENT_SIZE_CHANGED:
@@ -269,8 +301,10 @@ void eventLoop() {
 					force_refresh = 1;
 					break;
 				case SDL_WINDOWEVENT_CLOSE:
+					SDL_UnlockMutex(mutex);
 					return;
 			}
+			SDL_UnlockMutex(mutex);
 		}
 	}
 }
@@ -358,6 +392,12 @@ int main(int argc, char **argv) {
 	float coord_height = 4.0 / wh_ratio;
 	rect = (Rectangle) {-2.5, -coord_height / 2, 4.0, coord_height};
 
+	mutex = SDL_CreateMutex();
+	if(!mutex) {
+		mandelLog(ERROR, "Could not create Mutex!\n");
+		exit(EXIT_FAILURE);
+	}
+
 	SDL_Thread *renderThread = SDL_CreateThread(renderLoop,
 			"RenderThread", NULL);
 	if(renderThread == NULL) {
@@ -379,5 +419,6 @@ int main(int argc, char **argv) {
 	mandelLog(DEBUG, "Destroying Renderer\n");
 	free(framebuffer);
 	destroyRenderer(renderer);
+	SDL_DestroyMutex(mutex);
 	return 0;
 }

@@ -13,5 +13,6 @@ void generateImageCpuWH(int w, int h, Rectangle coord_rect, int *out_argb);
 void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter);
 
 void changeIterationsCpu(int diff);
+void changeExponentCpu(int diff);
 
 #endif

@@ -16,24 +16,36 @@ typedef struct {
 	int *out;
 	int thread_idx;
 	int max_iters;
+	int pow;
 } MandelbrotArgs;
 
 MandelBuffer mandelbuffer_cpu;
 int max_iterations_cpu = DEFAULT_ITERATIONS;
+int exponent_cpu = DEFAULT_EXPONENT;
 
 static int nthreads = 0;
 static SDL_Thread **threads;
 static MandelbrotArgs *args_list;
 
-int getIterationsCpu(float x0, float y0, float escape_rad, int max_iters) {
+void iterate(float x0, float y0, int pow, float *x, float *y) {
+	float retx = *x;
+	float rety = *y;
+	for(int i = 0; i < pow - 1; i++) {
+		float tmpx = retx * x[0] - rety * y[0];
+		rety = x[0] * rety + retx * y[0];
+		retx = tmpx;
+	}
+	x[0] = retx + x0;
+	y[0] = rety + y0;
+}
+
+int getIterationsCpu(float x0, float y0, float escape_rad, int max_iters, int pow) {
 	int iteration = 0;
 	float x = 0.0;
 	float y = 0.0;
 
 	while(x*x + y*y <= escape_rad * escape_rad && iteration < max_iters) {
-		float tmpx = x * x - y * y + x0;
-		y = 2 * x * y + y0;
-		x = tmpx;
+		iterate(x0, y0, pow, &x, &y);
 		iteration++;
 	}
 	return iteration;
@@ -75,7 +87,7 @@ int mandelbrot(void *voidargs) {
 		cx = cx / (float)(args->pix_w) * args->w + args->x;
 		cy = cy / (float)(args->pix_h) * args->h + args->y;
 
-		int iters = getIterationsCpu(cx, cy, args->escape_rad, args->max_iters);
+		int iters = getIterationsCpu(cx, cy, args->escape_rad, args->max_iters, args->pow);
 		int color = iterationsToColorCpu(iters, args->max_iters);
 		args->out[i] = 0xff000000 | color; // Write color with full alpha into output
 	}
@@ -86,6 +98,12 @@ void changeIterationsCpu(int diff) {
 	int new_iters = clamp(max_iterations_cpu + diff, 1, 5000);
 	mandelLog(INFO, "Changing Maximum Iterations to %d\n", new_iters);
 	max_iterations_cpu = new_iters;
+}
+
+void changeExponentCpu(int diff) {
+	int new_exponent = clamp(exponent_cpu + diff, 1, 200);
+	mandelLog(INFO, "Changing Exponent to %d\n", new_exponent);
+	exponent_cpu = new_exponent;
 }
 
 int mandelbrotCpuInit(int w, int h) {
@@ -153,6 +171,7 @@ void generateImageCpu(Rectangle coord_rect, int *out_argb) {
 		args_list[i].h = coord_rect.h;
 		args_list[i].escape_rad = ESCAPE_RADIUS;
 		args_list[i].max_iters = max_iterations_cpu;
+		args_list[i].pow = exponent_cpu;
 		args_list[i].out = out_argb;
 		args_list[i].thread_idx = i;
 		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
@@ -180,6 +199,7 @@ void generateImageCpuWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 		args_list[i].h = coord_rect.h;
 		args_list[i].escape_rad = ESCAPE_RADIUS;
 		args_list[i].max_iters = max_iterations_cpu;
+		args_list[i].pow = exponent_cpu;
 		args_list[i].out = out_argb;
 		args_list[i].thread_idx = i;
 		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
@@ -239,6 +259,7 @@ void doAntiAliasCpu(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 		args_list[i].h = coord_rect.h;
 		args_list[i].escape_rad = ESCAPE_RADIUS;
 		args_list[i].max_iters = max_iterations_cpu;
+		args_list[i].pow = exponent_cpu;
 		args_list[i].out = mandelbuffer_cpu.rgb_data;
 		args_list[i].thread_idx = i;
 		threads[i] = SDL_CreateThread(mandelbrot, "WorkerThread", args_list + i);
