@@ -26,7 +26,8 @@ static Renderer renderer;
 static Engine engine;
 static Rectangle rect;
 static int engine_initialized = 0;
-static int force_refresh;
+static int force_rerender = 0;
+static int force_refresh = 0;
 static int quit = 0;
 
 static int w, h;
@@ -124,28 +125,33 @@ int renderLoop() {
 				exit(EXIT_FAILURE);
 			}
 		}
-		if(force_refresh || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
+		if(force_rerender || memcmp(&rect_cache, &rect, sizeof(Rectangle))) {
 			SDL_LockMutex(mutex);
 			rect_cache = rect;
 			SDL_UnlockMutex(mutex);
-
-			force_refresh = 0;
 			mandelLog(DEBUG, "Rectangle changed to {%f, %f, %f, %f}\n",
 					rect.x, rect.y, rect.w, rect.h);
+
 			aa_counter = 0; // Reset Antialias
+			force_rerender = 0;
+			force_refresh = 1;
 
 			time = clock();
 			engine.genImage(rect_cache, framebuffer);
 			mandelLog(DEBUG, "Image generation took %6ld ticks\n", clock() - time);
-
-			renderImage(renderer, f_w, f_h, framebuffer);
+			
 		} else if(!disable_aa && aa_counter < MAX_AA_COUNTER) {
 			mandelLog(DEBUG, "Applying Antialias %d\n", aa_counter);
-
 			engine.doAA(rect_cache, framebuffer, aa_counter);
 
-			renderImage(renderer, f_w, f_h, framebuffer);
 			aa_counter++;
+			force_refresh = 1;
+		}
+		
+		// Repaint framebuffer to screen with SDL (either after rendering or when forced)
+		if(force_refresh) {
+			renderImage(renderer, f_w, f_h, framebuffer);
+			force_refresh = 0;
 		} else {
 			// Check again in 30 milliseconds if there is something to render/update
 			// 30 milliseconds is easily responsive enough and doesn't result in huge idle load
@@ -244,21 +250,21 @@ void eventLoop() {
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
 					engine.changeIters(iter_diff);
-					force_refresh = 1;
+					force_rerender = 1;
 					break;
 				case SDLK_k:
 					iter_diff = ev.key.keysym.mod & KMOD_SHIFT ? 10 : 1;
 					iter_diff *= ev.key.keysym.mod & KMOD_CTRL ? 100 : 1;
 					engine.changeIters(-iter_diff);
-					force_refresh = 1;
+					force_rerender = 1;
 					break;
 				case SDLK_u:
 					engine.changeExponent(1);
-					force_refresh = 1;
+					force_rerender = 1;
 					break;
 				case SDLK_j:
 					engine.changeExponent(-1);
-					force_refresh = 1;
+					force_rerender = 1;
 					break;
 			}
 			SDL_UnlockMutex(mutex);
@@ -298,6 +304,10 @@ void eventLoop() {
 					rect.y = rect.y + rect.h / 2.0 - coord_height / 2.0;
 					rect.h = coord_height;
 
+					force_rerender = 1;
+					break;
+				case SDL_WINDOWEVENT_MOVED:
+				case SDL_WINDOWEVENT_EXPOSED:
 					force_refresh = 1;
 					break;
 				case SDL_WINDOWEVENT_CLOSE:
