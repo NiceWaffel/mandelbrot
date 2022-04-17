@@ -7,7 +7,7 @@ CC=gcc
 # Link with g++ or gcc -lstdc++
 LINKER=g++
 
-TARGET=app
+TARGET=mandelbrot
 
 SOURCE_DIR=src
 OBJECT_DIR=obj

@@ -8,8 +8,7 @@ Build:
 
   script:
     - echo "Starting compilation the code..."
-    - make -Bj4
-    - mv app mandelbrot
+    - make -Bj
     - echo "Compilation complete."
 
   artifacts:
