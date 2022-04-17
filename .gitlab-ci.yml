@@ -1,0 +1,17 @@
+stages:
+  - build
+
+Build:
+  stage: build
+  before_script:
+    - apt update && apt -y install make autoconf gcc g++ nvidia-cuda-toolkit
+
+  script:
+    - echo "Starting compilation the code..."
+    - make -Bj4
+    - mv app mandelbrot
+    - echo "Compilation complete."
+
+  artifacts:
+    paths:
+      - mandelbrot
