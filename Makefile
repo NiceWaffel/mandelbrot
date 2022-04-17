@@ -36,7 +36,7 @@ all: pre-build main-build post-build
 pre-build:
 	$(MKDIR) -p $(OBJECT_DIR)
 main-build: $(TARGET)
-post-build:
+post-build: main-build
 	$(CHMOD) +x $(TARGET)
 
 
