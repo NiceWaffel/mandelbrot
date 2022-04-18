@@ -113,6 +113,7 @@ int mandelbrotCpuInit(int w, int h, int no_simd) {
 		          "Using a default of 8 threads.\n");
 		nthreads = 8;
 	}
+	mandelLog(VERBOSE, "Rendering with %d threads.\n", nthreads);
 
 	threads = (SDL_Thread **)malloc(nthreads * sizeof(SDL_Thread *));
 
@@ -125,13 +126,14 @@ int mandelbrotCpuInit(int w, int h, int no_simd) {
 #if ENABLE_AVX
 	if(__builtin_cpu_supports("avx2")) {
 		if(no_simd) {
-			mandelLog(INFO, "CPU supports AVX2 but SIMD instructions were explicitly disabled.\n");
+			mandelLog(VERBOSE, "CPU supports AVX2 but SIMD instructions were explicitly disabled.\n");
 		} else {
-			mandelLog(INFO, "CPU supports AVX2. To not use SIMD instructions specify the --no-simd command line flag.\n");
+			mandelLog(VERBOSE, "CPU supports AVX2. Using SIMD instructions to speed up rendering.\n");
+			mandelLog(VERBOSE, "To not use SIMD instructions specify the --no-simd command line flag.\n");
 			mandelbrot_function = mandelbrotIntrin;
 		}
 	} else {
-		mandelLog(INFO, "CPU does not support AVX2. Not using SIMD instructions.\n");
+		mandelLog(VERBOSE, "CPU does not support AVX2. Not using SIMD instructions.\n");
 	}
 #endif
 

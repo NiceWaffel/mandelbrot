@@ -125,7 +125,8 @@ error:
 }
 
 int mandelbrotCudaInit(int w, int h) {
-	mandelLog(VERBOSE, "Starting Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "Starting Cuda Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "To not use Cuda, specify the --force-cpu command line flag.\n");
 	int *img_data = NULL;
 	int ret = cudaMalloc(&img_data, w * h * sizeof(int));
 	if(ret != cudaSuccess) goto error;
@@ -142,7 +143,7 @@ error:
 }
 
 void mandelbrotCudaCleanup() {
-	mandelLog(VERBOSE, "Cleaning up Mandelbrot Engine...\n");
+	mandelLog(VERBOSE, "Cleaning up Cuda Mandelbrot Engine...\n");
 	cudaFree(mandelbuffer.rgb_data);
 }
 

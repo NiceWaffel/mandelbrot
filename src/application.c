@@ -79,6 +79,7 @@ void init_engine() {
 		engine.resizeFramebuffer = &resizeFramebufferCpu;
 		engine.changeIters = &changeIterationsCpu;
 		engine.changeExponent = &changeExponentCpu;
+		mandelLog(INFO, "CPU Mandelbrot Engine successfully initialized\n");
 #if ENABLE_CUDA
 	}
 #endif
