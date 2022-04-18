@@ -45,7 +45,7 @@ int iterationsToColor(int iterations, int max_iters) {
 	if(iterations >= max_iters)
 		return 0x000000; // Black
 
-	float hue = (int)(log2((float)iterations) * 20.0);
+	float hue = (int)(sqrt((float)iterations) * 10.0);
 	float C = 1.0;
 	float X = hue / 60.0;
 	X = X - (int)X;
@@ -127,9 +127,9 @@ error:
 int mandelbrotCudaInit(int w, int h) {
 	mandelLog(VERBOSE, "Starting Mandelbrot Engine...\n");
 	int *img_data = NULL;
-	int ret = cudaMallocManaged(&img_data, w * h * sizeof(int));
+	int ret = cudaMalloc(&img_data, w * h * sizeof(int));
 	if(ret != cudaSuccess) goto error;
-	mandelbuffer = {w, h, img_data};
+	mandelbuffer = {w, h, w*h, img_data};
 
 	ret = getDeviceAttributes();
 	if(ret != cudaSuccess) goto error;
@@ -147,12 +147,24 @@ void mandelbrotCudaCleanup() {
 }
 
 int resizeFramebufferCuda(int new_w, int new_h) {
+	int alloc_diff = mandelbuffer.alloc_size - new_w * new_h;
+	if(alloc_diff > 0 && alloc_diff < OVERALLOC_LIMIT) {
+		// When the necessary size is already overallocated and below the
+		// overallocation-limit we don't reallocate
+		mandelbuffer.w = new_w;
+		mandelbuffer.h = new_h;
+		return 0;
+	}
+
+	// Reallocation is needed
+	// We overallocate half of the overallocation limit for good flexibility
 	cudaFree(mandelbuffer.rgb_data);
 	int *img_data = NULL;
-	if(cudaMallocManaged(&img_data, new_w * new_h * sizeof(int)) != cudaSuccess) {
+	int alloc_size = new_w * new_h + (OVERALLOC_LIMIT / 2);
+	if(cudaMalloc(&img_data, alloc_size * sizeof(int)) != cudaSuccess) {
 		return -1;
 	}
-	mandelbuffer = {new_w, new_h, img_data};
+	mandelbuffer = {new_w, new_h, alloc_size, img_data};
 	return 0;
 }
 
@@ -165,8 +177,8 @@ void generateImageCuda(Rectangle coord_rect, int *out_argb) {
 			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, mandelbuffer.rgb_data, max_iterations, exponent);
 	cudaDeviceSynchronize();
 
-	memcpy(out_argb, mandelbuffer.rgb_data,
-			mandelbuffer.w * mandelbuffer.h * sizeof(int));
+	cudaMemcpy(out_argb, mandelbuffer.rgb_data,
+			mandelbuffer.w * mandelbuffer.h * sizeof(int), cudaMemcpyDeviceToHost);
 }
 
 void generateImageCudaWH(int w, int h, Rectangle coord_rect, int *out_argb) {
@@ -174,12 +186,15 @@ void generateImageCudaWH(int w, int h, Rectangle coord_rect, int *out_argb) {
 		return;
 
 	int *out;
-	cudaMallocManaged(&out, w * h * sizeof(int));
+	if(cudaMalloc(&out, w * h * sizeof(int)) != cudaSuccess) {
+		// Allocation error
+		return;
+	}
 	mandelbrot<<<RENDER_THREAD_BLOCKS, RENDER_THREADS>>>(w, h, coord_rect.x, coord_rect.y,
 			coord_rect.w, coord_rect.h, ESCAPE_RADIUS, out, max_iterations, exponent);
 	cudaDeviceSynchronize();
 
-	memcpy(out_argb, out, w * h * sizeof(int));
+	cudaMemcpy(out_argb, out, w * h * sizeof(int), cudaMemcpyDeviceToHost);
 	cudaFree(out);
 }
 
@@ -225,12 +240,16 @@ void doAntiAliasCuda(Rectangle coord_rect, int *argb_buf, int aa_counter) {
 
 	aa_counter += 2;
 
+	int *rgb_data = (int *)malloc(mandelbuffer.w * mandelbuffer.h * sizeof(int));
+	cudaMemcpy(rgb_data, mandelbuffer.rgb_data,
+			mandelbuffer.w * mandelbuffer.h * sizeof(int), cudaMemcpyDeviceToHost);
+
 	// blend them together
 	for(int i = 0; i < mandelbuffer.w * mandelbuffer.h; i++) {
-		int blend_color = blend(argb_buf[i],
-				mandelbuffer.rgb_data[i], 1.0 / aa_counter);
+		int blend_color = blend(argb_buf[i], rgb_data[i], 1.0 / aa_counter);
 		argb_buf[i] = 0xff000000 | blend_color; // apply full alpha
 	}
+	free(rgb_data);
 }
 
 }

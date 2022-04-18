@@ -33,6 +33,7 @@ static int quit = 0;
 static int w, h;
 static int disable_aa = 0;
 static int force_cpu = 0;
+static int no_simd = 0;
 static const char *screenshot_dir = ".";
 
 static SDL_mutex *mutex;
@@ -67,7 +68,7 @@ void init_engine() {
 	if(force_cpu) {
 #endif
 		mandelLog(INFO, "Using CPU Rendering. This will impact performance.\n");
-		if(mandelbrotCpuInit(w, h)) { // Returns nonzero status on error
+		if(mandelbrotCpuInit(w, h, no_simd)) { // Returns nonzero status on error
 			mandelLog(ERROR, "Could not initialize Cpu Mandelbrot Engine!\n");
 			exit(EXIT_FAILURE);
 		}
@@ -329,10 +330,11 @@ void print_help() {
 	       "  -v            Increase verbosity level to VERBOSE\n"
 	       "  -vv           Increase verbosity level to DEBUG\n"
 	       "  --no-aa       Disable anti-aliasing in the preview\n"
+	       "  --no-simd     Disable the use of SIMD instructions in CPU rendering mode\n"
 	       "  --force-cpu   Force usage of CPU rendering,\n"
 	       "                even if GPU is available\n"
-		   "  --screenshot-dir\n"
-		   "                Change the directory where screenshots are stored\n"
+	       "  --screenshot-dir\n"
+	       "                Change the directory where screenshots are stored\n"
 	       "\n"
 	       "Bindings:\n"
 	       " q, ESC    Quit the program\n"
@@ -383,6 +385,8 @@ void parse_arguments(int argc, char **argv) {
 			mandelLog(INFO, "Disabled Anti-Alias\n");
 		} else if(strcmp("--force-cpu", argv[i]) == 0) {
 			force_cpu = 1;
+		} else if(strcmp("--no-simd", argv[i]) == 0) {
+			no_simd = 1;
 		} else if(strcmp("--screenshot-dir", argv[i]) == 0) {
 			i++;
 			screenshot_dir = argv[i];

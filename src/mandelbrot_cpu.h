@@ -2,8 +2,9 @@
 #define _MANDELBROT_CPU_H_
 
 #include "mandelbrot_common.h"
+#include "mandelbrot_cpu_intrin.h"
 
-int mandelbrotCpuInit(int w, int h);
+int mandelbrotCpuInit(int w, int h, int no_simd);
 void mandelbrotCpuCleanup();
 
 int resizeFramebufferCpu(int new_w, int new_h);

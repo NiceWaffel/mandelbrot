@@ -1,6 +1,7 @@
 # This is just a workaround to not need a proper configure
 # We just read the value from the config file directly
 ENABLE_CUDA:=$(shell grep "ENABLE_CUDA" src/config.h | cut -d " " -f 3)
+ENABLE_AVX2:=$(shell grep "ENABLE_AVX" src/config.h | cut -d " " -f 3)
 
 NVCC=nvcc
 CC=gcc
@@ -22,12 +23,15 @@ RM=rm
 
 TARGET_DEPS=application.o render.o mandelbrot_cpu.o mandelbrot_common.o logger.o util.o
 
+ifeq "$(ENABLE_AVX2)" "1"
+	TARGET_DEPS+=mandelbrot_cpu_intrin.o
+endif
+
 LDFLAGS=-lSDL2 -lm
 ifeq "$(ENABLE_CUDA)" "1"
 	LDFLAGS+=-lcudart
 	TARGET_DEPS+=mandelbrot_cuda.o
 endif
-
 
 # -------------------------------------------------------------
 # Rule definitions
@@ -55,6 +59,9 @@ render.o:
 
 mandelbrot_cuda.o:
 	$(NVCC) -c $(SOURCE_DIR)/mandelbrot_cuda.cu -o $(OBJECT_DIR)/mandelbrot_cuda.o $(NVCFLAGS)
+
+mandelbrot_cpu_intrin.o:
+	$(CC) -c $(SOURCE_DIR)/mandelbrot_cpu_intrin.c -o $(OBJECT_DIR)/mandelbrot_cpu_intrin.o $(CFLAGS) -mavx -mavx2
 
 mandelbrot_cpu.o:
 	$(CC) -c $(SOURCE_DIR)/mandelbrot_cpu.c -o $(OBJECT_DIR)/mandelbrot_cpu.o $(CFLAGS)
